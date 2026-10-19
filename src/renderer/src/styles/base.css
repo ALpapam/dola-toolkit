@@ -1,0 +1,472 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: 0.25px;
+  background: var(--md-background);
+  color: var(--md-on-background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  cursor: default;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--md-primary) 30%, transparent);
+}
+
+/* scrollbars — thin MD3 style */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--md-on-surface) 22%, transparent);
+  border-radius: var(--shape-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 38%, transparent);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  -webkit-app-region: no-drag;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--md-primary);
+  text-decoration: none;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* draggable app regions */
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------------------------------------------------------------------- */
+/* App shell                                                              */
+/* ---------------------------------------------------------------------- */
+
+.app {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: var(--md-background);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Navigation rail                                                        */
+/*                                                                        */
+/* Collapsed: fixed --rail-w wide and every row is full-width with its    */
+/* content centred, so the app logo, tool icons and the settings icon all */
+/* share exactly one vertical axis.                                       */
+/* Expanded:  --rail-w-expanded; labels animate from max-width:0 so the   */
+/* glyphs never shift while the rail grows.                               */
+/* ---------------------------------------------------------------------- */
+.rail {
+  position: relative;
+  flex: 0 0 var(--rail-w);
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--sp-2);
+  gap: var(--sp-1);
+  background: var(--md-surface-container-low);
+  border-right: 1px solid var(--md-outline-variant);
+  transition: width var(--dur-4) var(--ease-emphasized), flex-basis var(--dur-4) var(--ease-emphasized);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.rail.expanded {
+  flex-basis: var(--rail-w-expanded);
+  width: var(--rail-w-expanded);
+}
+
+/* ---- brand ---- */
+.rail-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  height: 54px;
+  flex: 0 0 54px;
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-app-region: drag;
+}
+.rail.expanded .rail-brand {
+  justify-content: flex-start;
+  padding: 0 var(--sp-2);
+}
+.rail-brand-logo {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--elev-1);
+}
+.rail-brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.rail-brand-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-width var(--dur-4) var(--ease-emphasized),
+    opacity var(--dur-2) linear;
+}
+.rail.expanded .rail-brand-title {
+  max-width: 168px;
+  opacity: 1;
+}
+.rail-brand-name {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.rail-brand-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--md-on-surface-variant);
+  letter-spacing: 0.3px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+/* ---- scrollable tool list ---- */
+.rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+  padding: 2px 0;
+  scrollbar-width: none;
+}
+.rail-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+/* ---- rail rows: tools, expand toggle and settings share one geometry ---- */
+.rail-item,
+.rail-expand-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  width: 100%;
+  height: 48px;
+  flex: 0 0 auto;
+  border-radius: var(--shape-lg);
+  padding: 0;
+  color: var(--md-on-surface-variant);
+  transition:
+    background var(--dur-2) var(--ease-standard),
+    color var(--dur-2) var(--ease-standard);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.rail.expanded .rail-item,
+.rail.expanded .rail-expand-btn {
+  justify-content: flex-start;
+  padding: 0 var(--sp-3);
+}
+
+.rail-item:hover,
+.rail-expand-btn:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
+}
+.rail-item.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.rail-item.active .rail-item-label {
+  font-weight: 700;
+}
+
+/* fixed-size icon box keeps every glyph on the same vertical axis */
+.rail-item-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+.rail-item-icon .icon {
+  font-size: 22px;
+}
+.rail-expand-btn .rail-item-icon .icon {
+  font-size: 20px;
+}
+
+/* The label collapses to zero width (not just fades) — that is what keeps
+   the icon perfectly centred on the rail axis while collapsed. */
+.rail-item-label {
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    max-width var(--dur-4) var(--ease-emphasized),
+    opacity var(--dur-2) linear;
+}
+.rail.expanded .rail-item-label {
+  max-width: 150px;
+  opacity: 1;
+}
+
+.rail-item.dragging {
+  opacity: 0.55;
+}
+.rail-item[draggable='true'] {
+  cursor: grab;
+}
+.rail-item[draggable='true']:active {
+  cursor: grabbing;
+}
+.rail-item.drop-above::before,
+.rail-item.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--md-primary);
+}
+.rail-item.drop-above::before {
+  top: -2px;
+}
+.rail-item.drop-below::after {
+  bottom: -2px;
+}
+
+.rail-divider {
+  height: 1px;
+  margin: var(--sp-2) var(--sp-3);
+  background: var(--md-outline-variant);
+  flex: 0 0 auto;
+}
+
+/* ---- footer: expand toggle + settings pinned to the bottom ---- */
+.rail-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+  padding-top: var(--sp-2);
+  margin-top: var(--sp-1);
+  border-top: 1px solid var(--md-outline-variant);
+}
+.rail-expand-btn .rail-item-icon .icon {
+  transition: transform var(--dur-4) var(--ease-emphasized);
+}
+
+/* ---- main column ---- */
+.main-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---- custom title bar ---- */
+.titlebar {
+  height: var(--titlebar-h);
+  flex: 0 0 var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  background: var(--md-background);
+  -webkit-app-region: drag;
+  z-index: 15;
+}
+.titlebar-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--md-on-surface-variant);
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+}
+.titlebar-title .crumb {
+  opacity: 0.6;
+}
+.titlebar-spacer {
+  flex: 1 1 auto;
+}
+.win-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.win-btn {
+  width: 40px;
+  height: 30px;
+  border-radius: var(--shape-sm);
+  display: grid;
+  place-items: center;
+  color: var(--md-on-surface-variant);
+  transition: background var(--dur-1) linear;
+}
+.win-btn:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 10%, transparent);
+}
+.win-btn.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+/* ---- page host ---- */
+.page-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: page-in var(--dur-3) var(--ease-emphasized-decel) both;
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.page-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-6) var(--sp-3);
+}
+.page-header h1 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.page-header .sub {
+  font-size: 12.5px;
+  color: var(--md-on-surface-variant);
+  margin-top: 2px;
+}
+.page-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--sp-6) var(--sp-6);
+}
+.page-body.pad-top {
+  padding-top: var(--sp-2);
+}
+.page-body.flush {
+  padding: 0;
+}
+
+.hidden {
+  display: none !important;
+}

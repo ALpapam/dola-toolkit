@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dola Toolkit</title>
+    <!--
+      CSP notes:
+      * style-src / font-src / img-src must allow `blob:` — epub.js materialises
+        every EPUB resource (stylesheets, fonts, illustrations) as a blob URL.
+        Without `blob:` the chapter renders unstyled and illustrations are blocked.
+      * script-src stays strict ('self' only): book HTML never executes script.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob: file: https:; style-src 'self' 'unsafe-inline' blob:; script-src 'self'; font-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* https: ws://localhost:*; frame-src 'self' blob: data:"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

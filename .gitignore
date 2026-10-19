@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 构建产物
+out/
+dist/
+dist-portable/
+
+# 本地缓存与测试产物
+.tmp/
+.screenshots/
+.final-shots/
+*.log
+
+# 代理内核二进制约 180MB，且各项目许可不同 —— 不随仓库分发。
+# 请自行放入：cores/xray/xray.exe、cores/singbox/sing-box.exe、
+#            cores/mihomo/mihomo.exe、cores/geofiles/{geoip.dat,geosite.dat}
+cores/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

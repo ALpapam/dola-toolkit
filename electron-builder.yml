@@ -1,0 +1,31 @@
+appId: io.dola.toolkit
+productName: Dola Toolkit
+copyright: Copyright © 2026 ALpapam
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+# The ~200 MB of proxy cores (xray / mihomo / sing-box + geoip/geosite) are
+# deliberately NOT embedded: a portable exe unpacks its payload to a temp folder
+# on every launch, which would slow startup. They are shipped next to the exe
+# instead (scripts/copy-cores.mjs); the app also falls back to
+# D:\桌面\server\tool, so an existing install keeps working.
+win:
+  icon: build/icon.ico
+  target:
+    - target: portable
+      arch: [x64]
+portable:
+  artifactName: DolaToolkit-${version}-portable.${ext}
+  requestExecutionLevel: user
+  unpackDirName: dola-toolkit
+npmRebuild: false
+# reuse the already-installed local Electron instead of downloading it from GitHub
+electronDist: node_modules/electron/dist
+electronLanguages:
+  - zh-CN
+  - en-US

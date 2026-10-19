@@ -1,0 +1,826 @@
+// ---------------------------------------------------------------------------
+// Dola Toolkit — proxy core config generators.
+// PURE functions only: no fs, no electron, no network. Unit-testable.
+// Import-free except for types, so the file can be compiled standalone.
+// ---------------------------------------------------------------------------
+
+import type { CoreId, ProxyNode, ProxySettings, TransportKind } from '@shared/types'
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+function str(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback
+}
+
+function num(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function port(v: unknown, fallback = 443): number {
+  const n = Math.round(num(v, fallback))
+  return n > 0 && n < 65536 ? n : fallback
+}
+
+function network(n: ProxyNode): TransportKind {
+  const nw = str(n.network, 'tcp') as TransportKind
+  return ['tcp', 'ws', 'grpc', 'http', 'h2', 'quic'].includes(nw) ? nw : 'tcp'
+}
+
+function isTls(n: ProxyNode): boolean {
+  const sec = str(n.security, 'auto')
+  return sec === 'tls' || sec === 'reality'
+}
+
+function listenHost(settings: ProxySettings): string {
+  return settings.allowLan ? '0.0.0.0' : '127.0.0.1'
+}
+
+function alpnList(n: ProxyNode): string[] {
+  const raw = str(n.alpn)
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+const PRIVATE_CIDRS = [
+  '127.0.0.0/8',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '169.254.0.0/16',
+  '100.64.0.0/10',
+  '::1/128',
+  'fc00::/7',
+  'fe80::/10'
+]
+
+// ===========================================================================
+// Xray
+// ===========================================================================
+
+interface XrayStream {
+  network: string
+  security?: string
+  tlsSettings?: Record<string, unknown>
+  realitySettings?: Record<string, unknown>
+  wsSettings?: Record<string, unknown>
+  grpcSettings?: Record<string, unknown>
+  httpSettings?: Record<string, unknown>
+  tcpSettings?: Record<string, unknown>
+}
+
+function xrayStream(n: ProxyNode): XrayStream {
+  const nw = network(n)
+  const stream: XrayStream = { network: nw === 'h2' ? 'http' : nw }
+  const sni = str(n.sni) || str(n.host) || str(n.server)
+
+  if (isTls(n)) {
+    stream.security = str(n.security) === 'reality' ? 'reality' : 'tls'
+    if (stream.security === 'reality') {
+      stream.realitySettings = {
+        serverName: sni,
+        fingerprint: str(n.fingerprint, 'chrome'),
+        publicKey: str(n.publicKey),
+        shortId: str(n.shortId),
+        spiderX: str(n.spiderX, '/'),
+        show: false
+      }
+    } else {
+      const tlsSettings: Record<string, unknown> = {
+        serverName: sni,
+        allowInsecure: false,
+        fingerprint: str(n.fingerprint)
+      }
+      const alpn = alpnList(n)
+      if (alpn.length) tlsSettings.alpn = alpn
+      stream.tlsSettings = tlsSettings
+    }
+  } else {
+    stream.security = 'none'
+  }
+
+  if (nw === 'ws') {
+    const ws: Record<string, unknown> = { path: str(n.path, '/') }
+    const host = str(n.host) || sni
+    if (host) ws.headers = { Host: host }
+    stream.wsSettings = ws
+  } else if (nw === 'grpc') {
+    stream.grpcSettings = { serviceName: str(n.serviceName), multiMode: false }
+  } else if (nw === 'h2' || nw === 'http') {
+    const host = str(n.host) || sni
+    const settings: Record<string, unknown> = { path: str(n.path, '/') }
+    if (host) settings.host = [host]
+    stream.httpSettings = settings
+  }
+  return stream
+}
+
+function xrayOutbound(n: ProxyNode): Record<string, unknown> {
+  const server = str(n.server)
+  const p = port(n.port)
+  const out: Record<string, unknown> = { tag: 'proxy' }
+  const tls = tlsFree(n)
+
+  switch (n.protocol) {
+    case 'vmess':
+      out.protocol = 'vmess'
+      out.settings = {
+        vnext: [
+          {
+            address: server,
+            port: p,
+            users: [
+              {
+                id: str(n.uuid),
+                alterId: Math.round(num(n.alterId, 0)),
+                security: 'auto'
+              }
+            ]
+          }
+        ]
+      }
+      break
+    case 'vless':
+      out.protocol = 'vless'
+      out.settings = {
+        vnext: [
+          {
+            address: server,
+            port: p,
+            users: [
+              {
+                id: str(n.uuid),
+                encryption: 'none',
+                flow: str(n.flow)
+              }
+            ]
+          }
+        ]
+      }
+      break
+    case 'trojan':
+      out.protocol = 'trojan'
+      out.settings = {
+        servers: [{ address: server, port: p, password: str(n.password) }]
+      }
+      break
+    case 'shadowsocks':
+      out.protocol = 'shadowsocks'
+      out.settings = {
+        servers: [
+          {
+            address: server,
+            port: p,
+            method: str(n.method, 'aes-256-gcm'),
+            password: str(n.password)
+          }
+        ]
+      }
+      break
+    case 'socks':
+      out.protocol = 'socks'
+      out.settings = {
+        servers: [
+          {
+            address: server,
+            port: p,
+            users: str(n.password) ? [{ user: str(n.uuid), pass: str(n.password) }] : []
+          }
+        ]
+      }
+      break
+    case 'http':
+      out.protocol = 'http'
+      out.settings = {
+        servers: [
+          {
+            address: server,
+            port: p,
+            users: str(n.password) ? [{ user: str(n.uuid), pass: str(n.password) }] : []
+          }
+        ]
+      }
+      break
+    default:
+      // Xray cannot express this protocol; fall back to a direct outbound so the
+      // config still starts instead of trapping the user offline.
+      out.protocol = 'freedom'
+      out.tag = 'proxy'
+      break
+  }
+
+  if (out.protocol !== 'freedom') out.streamSettings = xrayStream(n)
+  out.mux = tls ? { enabled: false, concurrency: -1 } : { enabled: false, concurrency: -1 }
+  return out
+}
+
+function tlsFree(n: ProxyNode): boolean {
+  return n.protocol === 'shadowsocks' || n.protocol === 'socks' || n.protocol === 'http'
+}
+
+export function buildXrayConfig(node: ProxyNode, settings: ProxySettings): string {
+  const sni = str(node.sni) || str(node.host) || str(node.server)
+  const rules: unknown[] = [
+    {
+      type: 'field',
+      ip: ['geoip:private', ...PRIVATE_CIDRS],
+      outboundTag: 'direct',
+      network: 'tcp,udp'
+    },
+    {
+      type: 'field',
+      domain: ['localhost', '*.local', '*.lan'],
+      outboundTag: 'direct'
+    }
+  ]
+  if (str(node.host) && str(node.host) !== str(node.server)) {
+    // keep the fake Host reachable without looping through the proxy for DNS
+    rules.push({ type: 'field', domain: [str(node.host)], outboundTag: 'proxy' })
+  }
+
+  const dnsServers = settings.remoteDns
+    ? ['1.1.1.1', '8.8.8.8', '223.5.5.5']
+    : ['223.5.5.5', '119.29.29.29']
+
+  const config = {
+    log: { loglevel: settings.logLevel === 'debug' ? 'debug' : settings.logLevel === 'warn' ? 'warning' : settings.logLevel === 'error' ? 'error' : 'info' },
+    dns: {
+      servers: dnsServers,
+      queryStrategy: settings.ipv6 ? 'UseIP' : 'UseIPv4',
+      disableFallback: false,
+      tag: 'dns-in'
+    },
+    inbounds: [
+      {
+        tag: 'mixed-in',
+        port: port(settings.mixedPort, 7897),
+        listen: listenHost(settings),
+        protocol: 'mixed',
+        settings: { auth: 'noauth', udp: true },
+        sniffing: settings.sniffing
+          ? { enabled: true, destOverride: ['http', 'tls', 'quic'], routeOnly: false }
+          : { enabled: false }
+      }
+    ],
+    outbounds: [
+      xrayOutbound(node),
+      { tag: 'direct', protocol: 'freedom', settings: { domainStrategy: 'UseIP' } },
+      { tag: 'block', protocol: 'blackhole', settings: {} }
+    ],
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      domainMatcher: 'hybrid',
+      rules: [...rules, { type: 'field', network: 'tcp,udp', outboundTag: 'proxy' }]
+    },
+    policy: {
+      levels: { '0': { handshake: 4, connIdle: 300, uplinkOnly: 1, downlinkOnly: 1 } },
+      system: { statsInboundUplink: false, statsInboundDownlink: false }
+    }
+  }
+  void sni
+  return JSON.stringify(config, null, 2)
+}
+
+/**
+ * Xray needs its geo assets next to the binary (or via XRAY_LOCATION_ASSET).
+ * The manager sets that env var; this helper only reports what has to exist.
+ */
+export function xrayGeoEnv(geoDirPath: string): Record<string, string> {
+  return { XRAY_LOCATION_ASSET: geoDirPath }
+}
+
+// ===========================================================================
+// sing-box
+// ===========================================================================
+
+function sbTls(n: ProxyNode): Record<string, unknown> | undefined {
+  if (!isTls(n)) return undefined
+  const tls: Record<string, unknown> = {
+    enabled: true,
+    server_name: str(n.sni) || str(n.host) || str(n.server),
+    insecure: false
+  }
+  const fp = str(n.fingerprint)
+  if (fp) tls.utls = { enabled: true, fingerprint: fp }
+  const alpn = alpnList(n)
+  if (alpn.length) tls.alpn = alpn
+  if (str(n.security) === 'reality') {
+    tls.reality = {
+      enabled: true,
+      public_key: str(n.publicKey),
+      short_id: str(n.shortId)
+    }
+  }
+  return tls
+}
+
+function sbTransport(n: ProxyNode): Record<string, unknown> | undefined {
+  const nw = network(n)
+  if (nw === 'ws') {
+    const ws: Record<string, unknown> = { type: 'ws', path: str(n.path, '/') }
+    const host = str(n.host) || str(n.sni)
+    if (host) ws.headers = { Host: host }
+    const ed = num(0)
+    if (ed > 0) ws.max_early_data = ed
+    return ws
+  }
+  if (nw === 'grpc') {
+    return { type: 'grpc', service_name: str(n.serviceName) }
+  }
+  if (nw === 'h2' || nw === 'http') {
+    const http: Record<string, unknown> = { type: 'http', path: str(n.path, '/') }
+    const host = str(n.host) || str(n.sni)
+    if (host) http.host = [host]
+    return http
+  }
+  return undefined
+}
+
+function sbOutbound(n: ProxyNode): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    tag: 'proxy',
+    server: str(n.server),
+    server_port: port(n.port)
+  }
+
+  switch (n.protocol) {
+    case 'vmess':
+      base.type = 'vmess'
+      base.uuid = str(n.uuid)
+      base.security = 'auto'
+      base.alter_id = Math.round(num(n.alterId, 0))
+      break
+    case 'vless':
+      base.type = 'vless'
+      base.uuid = str(n.uuid)
+      if (str(n.flow)) base.flow = str(n.flow)
+      break
+    case 'trojan':
+      base.type = 'trojan'
+      base.password = str(n.password)
+      break
+    case 'shadowsocks':
+      base.type = 'shadowsocks'
+      base.method = str(n.method, 'aes-256-gcm')
+      base.password = str(n.password)
+      break
+    case 'socks':
+      base.type = 'socks'
+      base.version = '5'
+      if (str(n.uuid)) base.username = str(n.uuid)
+      if (str(n.password)) base.password = str(n.password)
+      break
+    case 'http':
+      base.type = 'http'
+      if (str(n.uuid)) base.username = str(n.uuid)
+      if (str(n.password)) base.password = str(n.password)
+      break
+    case 'hysteria2':
+      base.type = 'hysteria2'
+      base.password = str(n.password)
+      if (str(n.obfs)) {
+        base.obfs = { type: str(n.obfs), password: str(n.obfsParam) }
+      }
+      if (num(n.upMbps) > 0) base.up_mbps = Math.round(num(n.upMbps))
+      if (num(n.downMbps) > 0) base.down_mbps = Math.round(num(n.downMbps))
+      break
+    case 'tuic':
+      base.type = 'tuic'
+      base.uuid = str(n.uuid)
+      base.password = str(n.password)
+      base.congestion_control = 'bbr'
+      base.udp_relay_mode = 'native'
+      break
+    case 'anytls':
+      base.type = 'anytls'
+      base.password = str(n.password)
+      break
+    default:
+      base.type = 'direct'
+      delete base.server
+      delete base.server_port
+      break
+  }
+
+  const tls = sbTls(n)
+  if (tls && base.type !== 'direct') base.tls = tls
+  const transport = sbTransport(n)
+  if (transport && base.type !== 'direct') base.transport = transport
+  if (base.type === 'hysteria2' || base.type === 'tuic') {
+    if (!base.tls) base.tls = { enabled: true, server_name: str(n.sni) || str(n.server) }
+  }
+  return base
+}
+
+export function buildSingBoxConfig(node: ProxyNode, settings: ProxySettings): string {
+  const config = {
+    log: {
+      level: settings.logLevel === 'debug' ? 'debug' : settings.logLevel === 'warn' ? 'warn' : settings.logLevel === 'error' ? 'error' : 'info',
+      timestamp: true
+    },
+    dns: {
+      servers: settings.remoteDns
+        ? [
+            { type: 'udp', tag: 'local', server: '223.5.5.5' },
+            { type: 'https', tag: 'remote', server: '1.1.1.1', detour: 'proxy' }
+          ]
+        : [{ type: 'udp', tag: 'local', server: '223.5.5.5' }],
+      final: settings.remoteDns ? 'remote' : 'local',
+      strategy: settings.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
+    },
+    inbounds: [
+      {
+        type: 'mixed',
+        tag: 'mixed-in',
+        listen: listenHost(settings),
+        listen_port: port(settings.mixedPort, 7897)
+      }
+    ],
+    outbounds: [
+      sbOutbound(node),
+      { type: 'direct', tag: 'direct' },
+      { type: 'block', tag: 'block' }
+    ],
+    route: {
+      // sing-box 1.13+ moved sniffing from inbound fields to route actions.
+      rules: [
+        ...(settings.sniffing
+          ? [{ action: 'sniff', inbound: ['mixed-in'], timeout: '300ms' } as Record<string, unknown>]
+          : []),
+        { ip_is_private: true, outbound: 'direct' }
+      ],
+      rule_set: [] as unknown[],
+      final: 'proxy',
+      auto_detect_interface: true,
+      default_domain_resolver: settings.remoteDns ? 'remote' : 'local'
+    },
+    experimental: {
+      cache_file: { enabled: false },
+      clash_api: { external_controller: '127.0.0.1:0', default_mode: 'rule' }
+    }
+  }
+  return JSON.stringify(config, null, 2)
+}
+
+/** sing-box 1.14 needs a resolvable `type` on every DNS server; validate ours. */
+export function singBoxConfigIssues(config: unknown): string[] {
+  const issues: string[] = []
+  const c = config as { dns?: { servers?: unknown[] }; outbounds?: unknown[]; inbounds?: unknown[] }
+  if (!Array.isArray(c.outbounds) || c.outbounds.length < 2) issues.push('outbounds missing')
+  if (!Array.isArray(c.inbounds) || c.inbounds.length === 0) issues.push('inbounds missing')
+  if (c.dns && Array.isArray(c.dns.servers)) {
+    for (const s of c.dns.servers) {
+      const srv = s as { type?: unknown; server?: unknown }
+      if (typeof srv.type !== 'string') issues.push('dns server without type')
+      if (typeof srv.server !== 'string') issues.push('dns server without server')
+    }
+  }
+  return issues
+}
+
+// ===========================================================================
+// Mihomo (YAML, hand-built — no yaml dependency)
+// ===========================================================================
+
+/** Quote anything that is not a plain alphanumeric / dash / dot token. */
+export function yamlStr(v: unknown): string {
+  const s = v === undefined || v === null ? '' : String(v)
+  if (s === '') return '""'
+  if (/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(s) && !/^(true|false|null|yes|no|on|off|~)$/i.test(s)) {
+    return s
+  }
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, ' ')}"`
+}
+
+function yamlBool(v: boolean): string {
+  return v ? 'true' : 'false'
+}
+
+function yamlNum(v: number): string {
+  return Number.isFinite(v) ? String(v) : '0'
+}
+
+interface YamlMap {
+  [key: string]: YamlValue
+}
+type YamlValue = string | number | boolean | YamlValue[] | YamlMap
+
+function emitYaml(value: YamlValue, indent = 0): string {
+  const pad = ' '.repeat(indent)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return `${pad}[]`
+    return value
+      .map((v) => {
+        if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
+          const nested = emitYaml(v, indent + 2)
+          return `${pad}- ${nested.trimStart()}`
+        }
+        return `${pad}- ${String(v)}`
+      })
+      .join('\n')
+  }
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value)
+    if (entries.length === 0) return `${pad}{}`
+    return entries
+      .map(([k, v]) => {
+        if (Array.isArray(v)) {
+          if (v.length === 0) return `${pad}${k}: []`
+          return `${pad}${k}:\n${emitYaml(v, indent + 2)}`
+        }
+        if (typeof v === 'object' && v !== null) {
+          return `${pad}${k}:\n${emitYaml(v, indent + 2)}`
+        }
+        return `${pad}${k}: ${String(v)}`
+      })
+      .join('\n')
+  }
+  return `${pad}${String(value)}`
+}
+
+function mihomoProxy(n: ProxyNode): YamlMap {
+  const p: YamlMap = {
+    name: 'NODE',
+    type: 'ss',
+    server: yamlStr(n.server),
+    port: port(n.port),
+    udp: true
+  }
+  const sni = str(n.sni) || str(n.host) || str(n.server)
+  const nw = network(n)
+
+  switch (n.protocol) {
+    case 'vmess':
+      p.type = 'vmess'
+      p.uuid = yamlStr(n.uuid)
+      p.alterId = Math.round(num(n.alterId, 0))
+      p.cipher = 'auto'
+      if (isTls(n)) {
+        p.tls = true
+        p.servername = yamlStr(sni)
+      }
+      if (str(n.fingerprint)) p['client-fingerprint'] = yamlStr(n.fingerprint)
+      break
+    case 'vless':
+      p.type = 'vless'
+      p.uuid = yamlStr(n.uuid)
+      if (isTls(n)) {
+        p.tls = true
+        p.servername = yamlStr(sni)
+      }
+      if (str(n.fingerprint)) p['client-fingerprint'] = yamlStr(n.fingerprint)
+      if (str(n.flow)) p.flow = yamlStr(n.flow)
+      if (str(n.security) === 'reality') {
+        p['reality-opts'] = {
+          'public-key': yamlStr(n.publicKey),
+          'short-id': yamlStr(n.shortId)
+        }
+      }
+      break
+    case 'trojan':
+      p.type = 'trojan'
+      p.password = yamlStr(n.password)
+      p.sni = yamlStr(sni)
+      p['skip-cert-verify'] = false
+      break
+    case 'shadowsocks':
+      p.type = 'ss'
+      p.cipher = yamlStr(str(n.method, 'aes-256-gcm'))
+      p.password = yamlStr(n.password)
+      if (str(n.obfs)) {
+        p.plugin = 'obfs'
+        p['plugin-opts'] = { mode: yamlStr(n.obfs), host: yamlStr(n.obfsParam) }
+      }
+      break
+    case 'socks':
+      p.type = 'socks5'
+      if (str(n.uuid)) p.username = yamlStr(n.uuid)
+      if (str(n.password)) p.password = yamlStr(n.password)
+      break
+    case 'http':
+      p.type = 'http'
+      if (str(n.uuid)) p.username = yamlStr(n.uuid)
+      if (str(n.password)) p.password = yamlStr(n.password)
+      if (isTls(n)) {
+        p.tls = true
+        p.sni = yamlStr(sni)
+      }
+      break
+    case 'hysteria2':
+      p.type = 'hysteria2'
+      p.password = yamlStr(n.password)
+      p.sni = yamlStr(sni)
+      p['skip-cert-verify'] = false
+      delete p.udp
+      if (str(n.obfs)) {
+        p.obfs = yamlStr(n.obfs)
+        p['obfs-password'] = yamlStr(n.obfsParam)
+      }
+      if (num(n.upMbps) > 0) p.up = yamlStr(`${Math.round(num(n.upMbps))} Mbps`)
+      if (num(n.downMbps) > 0) p.down = yamlStr(`${Math.round(num(n.downMbps))} Mbps`)
+      break
+    case 'tuic':
+      p.type = 'tuic'
+      p.uuid = yamlStr(n.uuid)
+      p.password = yamlStr(n.password)
+      p.sni = yamlStr(sni)
+      p.alpn = ['h3']
+      p['congestion-controller'] = 'bbr'
+      p['udp-relay-mode'] = 'native'
+      p['skip-cert-verify'] = false
+      break
+    case 'anytls':
+      p.type = 'anytls'
+      p.password = yamlStr(n.password)
+      p.sni = yamlStr(sni)
+      p['skip-cert-verify'] = false
+      break
+    case 'wireguard':
+      p.type = 'wireguard'
+      p.ip = yamlStr(str(n.uuid, '172.16.0.2/32'))
+      p['private-key'] = yamlStr(str(n.password))
+      p['public-key'] = yamlStr(str(n.publicKey))
+      p['allowed-ips'] = ['0.0.0.0/0']
+      break
+    default:
+      p.type = 'socks5'
+      break
+  }
+
+  // transport for the protocol types that support it
+  if (['vmess', 'vless', 'trojan'].includes(str(p.type))) {
+    if (nw === 'ws') {
+      p.network = 'ws'
+      const ws: YamlMap = { path: yamlStr(str(n.path, '/')) }
+      const host = str(n.host) || sni
+      if (host) ws.headers = { Host: yamlStr(host) }
+      p['ws-opts'] = ws
+    } else if (nw === 'grpc') {
+      p.network = 'grpc'
+      p['grpc-opts'] = { 'grpc-service-name': yamlStr(n.serviceName) }
+    } else if (nw === 'h2' || nw === 'http') {
+      p.network = 'h2'
+      const h2: YamlMap = { path: yamlStr(str(n.path, '/')) }
+      const host = str(n.host) || sni
+      if (host) h2.host = [yamlStr(host)]
+      p['h2-opts'] = h2
+    } else {
+      p.network = 'tcp'
+    }
+    const alpn = alpnList(n)
+    if (alpn.length) p.alpn = alpn.map((a) => yamlStr(a))
+  }
+
+  // YAML-safe scalars: never let mihomo see an unquoted weird string.
+  for (const [k, v] of Object.entries(p)) {
+    if (typeof v === 'string' && !v.startsWith('"') && k !== 'type' && k !== 'cipher') {
+      p[k] = yamlStr(v)
+    }
+  }
+  return p
+}
+
+export function buildMihomoConfig(node: ProxyNode, settings: ProxySettings): string {
+  const proxy = mihomoProxy(node)
+  const doc: YamlMap = {
+    'mixed-port': port(settings.mixedPort, 7897),
+    'allow-lan': settings.allowLan,
+    'bind-address': yamlStr(listenHost(settings)),
+    mode: 'rule',
+    'log-level': settings.logLevel,
+    ipv6: settings.ipv6,
+    // Use the bundled .dat assets instead of downloading an MMDB at runtime.
+    'geodata-mode': true,
+    'geodata-loader': 'standard',
+    'geo-auto-update': false,
+    'unified-delay': true,
+    'tcp-concurrent': true,
+    'external-controller': yamlStr('127.0.0.1:0'),
+    profile: { 'store-selected': false, 'store-fake-ip': false },
+    dns: {
+      enable: true,
+      ipv6: settings.ipv6,
+      'enhanced-mode': 'fake-ip',
+      'fake-ip-range': '198.18.0.1/16',
+      nameserver: ['223.5.5.5', '119.29.29.29'].map((s) => yamlStr(s)),
+      fallback: settings.remoteDns
+        ? ['https://1.1.1.1/dns-query', 'https://dns.google/dns-query'].map((s) => yamlStr(s))
+        : [],
+      'fallback-filter': { geoip: true, 'geoip-code': 'CN' }
+    },
+    proxies: [proxy],
+    'proxy-groups': [
+      {
+        name: 'PROXY',
+        type: 'select',
+        proxies: ['NODE', 'DIRECT']
+      }
+    ],
+    rules: [
+      'GEOIP,private,DIRECT',
+      'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+      'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+      'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+      'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+      'IP-CIDR,169.254.0.0/16,DIRECT,no-resolve',
+      'DOMAIN-SUFFIX,local,DIRECT',
+      'DOMAIN-SUFFIX,lan,DIRECT',
+      'MATCH,PROXY'
+    ]
+  }
+  const header = [
+    '# Dola Toolkit — generated mihomo config (do not edit, rewritten on every start)',
+    `# node: ${str(node.name, 'unnamed')} (${str(node.protocol)}) engine: mihomo`,
+    ''
+  ].join('\n')
+  return `${header}${emitYaml(doc as YamlValue)}\n`
+}
+
+/** Minimal YAML sanity check used by the self-test (not a real parser). */
+export function validateMihomoYaml(text: string): string[] {
+  const problems: string[] = []
+  const lines = text.split(/\r?\n/)
+  if (!/^mixed-port:\s*\d+/m.test(text)) problems.push('missing mixed-port')
+  if (!/^proxies:/m.test(text)) problems.push('missing proxies')
+  if (!/^rules:/m.test(text)) problems.push('missing rules')
+  const seen = new Map<string, number>()
+  lines.forEach((line, i) => {
+    if (line.trim().startsWith('#') || !line.trim()) return
+    if (/^\t/.test(line)) problems.push(`tab indentation at line ${i + 1}`)
+    const open = (line.match(/"/g) ?? []).length
+    if (open % 2 !== 0) problems.push(`unbalanced quotes at line ${i + 1}: ${line.trim()}`)
+    const key = /^(\s*)([A-Za-z0-9_.-]+):/.exec(line)
+    if (key) {
+      const sig = `${key[1].length}|${key[2]}`
+      seen.set(sig, (seen.get(sig) ?? 0) + 1)
+    }
+  })
+  for (const [sig, count] of seen) {
+    const [indent, key] = sig.split('|')
+    if (key === 'type' || key === 'name' || key === 'path' || key === 'mode') continue
+    if (count > 1) problems.push(`duplicate key "${key}" at indent ${indent}`)
+  }
+  return problems
+}
+
+// ===========================================================================
+// Dispatch
+// ===========================================================================
+
+export function buildCoreConfig(
+  engine: CoreId,
+  node: ProxyNode,
+  settings: ProxySettings
+): string {
+  switch (engine) {
+    case 'xray':
+      return buildXrayConfig(node, settings)
+    case 'singbox':
+      return buildSingBoxConfig(node, settings)
+    case 'mihomo':
+      return buildMihomoConfig(node, settings)
+    default:
+      return buildXrayConfig(node, settings)
+  }
+}
+
+export function configFileName(engine: CoreId): string {
+  return engine === 'mihomo' ? 'config.yaml' : 'config.json'
+}
+
+/** argv for a foreground run; the first element is the subcommand when needed. */
+export function startArgs(engine: CoreId, configPath: string): string[] {
+  switch (engine) {
+    case 'xray':
+      return ['run', '-c', configPath]
+    case 'singbox':
+      return ['run', '-c', configPath, '--disable-color']
+    case 'mihomo':
+      return ['-f', configPath]
+    default:
+      return ['-c', configPath]
+  }
+}
+
+export function testArgs(engine: CoreId, configPath: string): string[] {
+  switch (engine) {
+    case 'xray':
+      return ['run', '-test', '-c', configPath]
+    case 'singbox':
+      return ['check', '-c', configPath, '--disable-color']
+    case 'mihomo':
+      return ['-t', '-f', configPath]
+    default:
+      return ['-t', '-f', configPath]
+  }
+}
+
+export function isJsonEngine(engine: CoreId): boolean {
+  return engine !== 'mihomo'
+}
+

@@ -1,0 +1,478 @@
+// ---------------------------------------------------------------------------
+// Dola Toolkit — shared type contract (frozen; owned by Lead)
+// Every IPC payload and persisted record flows through these types.
+// ---------------------------------------------------------------------------
+
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type SeedSource = 'auto' | 'wallpaper' | 'accent' | 'custom'
+
+export interface AppearanceSettings {
+  themeMode: ThemeMode
+  /** when true the seed color is derived from the desktop wallpaper (Monet) */
+  monet: boolean
+  seedSource: SeedSource
+  /** id of the selected built-in palette (see shared/presets.ts) */
+  preset: string
+  /** ARGB hex like "#FF6750A4" — used when seedSource === 'custom' */
+  customSeed: string
+  /** fall back to a fixed MD3 baseline palette when wallpaper sampling fails */
+  contrast: number
+  roundness: number
+  reduceMotion: boolean
+}
+
+export interface AISettings {
+  enabled: boolean
+  /** OpenAI-compatible base URL, e.g. https://api.openai.com/v1 */
+  baseUrl: string
+  apiKey: string
+  model: string
+  temperature: number
+  maxTokens: number
+  /** system prompt used for reader-side Q&A and summaries */
+  systemPrompt: string
+  /** preset prompt used to decide whether two books belong to one series/work */
+  seriesPrompt: string
+  timeoutMs: number
+}
+
+export interface WebDavSettings {
+  enabled: boolean
+  url: string
+  username: string
+  password: string
+  remoteDir: string
+  /** ISO timestamp of the last successful sync */
+  lastSyncAt: string | null
+  autoSync: boolean
+  /** what gets uploaded: settings | library | both */
+  scope: 'settings' | 'library' | 'both'
+}
+
+export interface ProxySettings {
+  /** default engine picked when a node is created */
+  defaultEngine: CoreId
+  mixedPort: number
+  allowLan: boolean
+  /** route DNS through the proxy chain */
+  remoteDns: boolean
+  logLevel: 'error' | 'warn' | 'info' | 'debug'
+  autoStart: boolean
+  /** write Windows system proxy on start / clear it on stop */
+  systemProxy: boolean
+  sniffing: boolean
+  ipv6: boolean
+  bypass: string
+  /** kill switch: block traffic while the core is restarting (best effort) */
+  autoRestart: boolean
+}
+
+export interface LibrarySettings {
+  defaultView: 'grid' | 'list'
+  /** auto = follow window aspect ratio */
+  spreadMode: 'auto' | 'always' | 'never'
+  flipMode: 'button' | 'zone' | 'both'
+  aiAutoClassify: boolean
+  /** managed = copy into app data, reference = keep original path */
+  importMode: 'managed' | 'reference'
+  defaultSort: 'added' | 'title' | 'author' | 'recent'
+  coverWidth: number
+}
+
+export interface GeneralSettings {
+  language: 'zh' | 'en'
+  zoom: number
+  closeToTray: boolean
+  launchAtLogin: boolean
+  checkUpdates: boolean
+}
+
+export interface Settings {
+  schema: 1
+  appearance: AppearanceSettings
+  ai: AISettings
+  sync: WebDavSettings
+  proxy: ProxySettings
+  library: LibrarySettings
+  general: GeneralSettings
+}
+
+export interface MonetResult {
+  /** seed ARGB hex */
+  seed: string
+  source: 'wallpaper' | 'accent' | 'custom' | 'fallback'
+  /** generated MD3 schemes */
+  light: ColorScheme
+  dark: ColorScheme
+  /** preview colors sampled from the wallpaper */
+  palette: string[]
+  wallpaper: string | null
+}
+
+export interface ColorScheme {
+  primary: string
+  onPrimary: string
+  primaryContainer: string
+  onPrimaryContainer: string
+  secondary: string
+  onSecondary: string
+  secondaryContainer: string
+  onSecondaryContainer: string
+  tertiary: string
+  onTertiary: string
+  tertiaryContainer: string
+  onTertiaryContainer: string
+  error: string
+  onError: string
+  errorContainer: string
+  onErrorContainer: string
+  background: string
+  onBackground: string
+  surface: string
+  onSurface: string
+  surfaceVariant: string
+  onSurfaceVariant: string
+  surfaceDim: string
+  surfaceBright: string
+  surfaceContainerLowest: string
+  surfaceContainerLow: string
+  surfaceContainer: string
+  surfaceContainerHigh: string
+  surfaceContainerHighest: string
+  outline: string
+  outlineVariant: string
+  inverseSurface: string
+  inverseOnSurface: string
+  inversePrimary: string
+  shadow: string
+  scrim: string
+  [key: string]: string
+}
+
+// ---------------------------------------------------------------------------
+// Proxy
+// ---------------------------------------------------------------------------
+
+export type CoreId = 'xray' | 'mihomo' | 'singbox'
+
+export type NodeProtocol =
+  | 'vmess'
+  | 'vless'
+  | 'trojan'
+  | 'shadowsocks'
+  | 'socks'
+  | 'http'
+  | 'hysteria2'
+  | 'tuic'
+  | 'anytls'
+  | 'wireguard'
+
+export type TransportKind = 'tcp' | 'ws' | 'grpc' | 'http' | 'h2' | 'quic'
+
+/** Flat, superset node model — the generator picks the fields each core needs. */
+export interface ProxyNode {
+  id: string
+  name: string
+  protocol: NodeProtocol
+  /** preferred engine for this node */
+  engine: CoreId
+  server: string
+  port: number
+  uuid?: string
+  password?: string
+  method?: string
+  alterId?: number
+  flow?: string
+  security?: 'none' | 'tls' | 'reality' | 'auto'
+  sni?: string
+  alpn?: string
+  fingerprint?: string
+  publicKey?: string
+  shortId?: string
+  spiderX?: string
+  network?: TransportKind
+  path?: string
+  host?: string
+  serviceName?: string
+  headerType?: string
+  upMbps?: number
+  downMbps?: number
+  obfs?: string
+  obfsParam?: string
+  /** extra JSON merged into the generated outbound (advanced) */
+  extra?: string
+  remark?: string
+  group?: string
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface NodeDraft {
+  name: string
+  protocol: NodeProtocol
+  engine: CoreId
+  server: string
+  port: number
+  uuid?: string
+  password?: string
+  method?: string
+  alterId?: number
+  flow?: string
+  security?: 'none' | 'tls' | 'reality' | 'auto'
+  sni?: string
+  alpn?: string
+  fingerprint?: string
+  publicKey?: string
+  shortId?: string
+  spiderX?: string
+  network?: TransportKind
+  path?: string
+  host?: string
+  serviceName?: string
+  upMbps?: number
+  downMbps?: number
+  obfs?: string
+  obfsParam?: string
+  extra?: string
+  group?: string
+}
+
+export interface ImportLinksResult {
+  added: ProxyNode[]
+  failed: { link: string; reason: string }[]
+}
+
+export interface CoreStatus {
+  engine: CoreId
+  available: boolean
+  version: string | null
+  running: boolean
+  pid: number | null
+  nodeId: string | null
+  startedAt: number | null
+  error: string | null
+  mixedPort: number
+  /** rolling tail of core stdout/stderr */
+  logs: string[]
+}
+
+export interface ProxyState {
+  nodes: ProxyNode[]
+  selectedNodeId: string | null
+  engines: CoreStatus[]
+  activeEngine: CoreId
+  systemProxy: boolean
+  geo: GeoState
+  settings: ProxySettings
+}
+
+export interface GeoState {
+  geoip: { path: string; size: number; updatedAt: number | null } | null
+  geosite: { path: string; size: number; updatedAt: number | null } | null
+  dir: string
+}
+
+export interface NodeTestResult {
+  nodeId: string
+  ok: boolean
+  delayMs: number | null
+  exitIp: string | null
+  country: string | null
+  error: string | null
+}
+
+export interface CoreLogEvent {
+  engine: CoreId
+  line: string
+  level: 'info' | 'warn' | 'error'
+  at: number
+}
+
+/** What the renderer shows in the "add node" sheet per engine. */
+export interface EngineCapability {
+  engine: CoreId
+  label: string
+  blurb: string
+  protocols: NodeProtocol[]
+  version: string | null
+  available: boolean
+  binary: string
+}
+
+// ---------------------------------------------------------------------------
+// Library
+// ---------------------------------------------------------------------------
+
+export type BookFormat = 'epub' | 'pdf' | 'fb2' | 'mobi' | 'txt' | 'rtf' | 'azw3' | 'unknown'
+
+export interface BookRecord {
+  id: string
+  title: string
+  author: string
+  format: BookFormat
+  filePath: string
+  size: number
+  addedAt: number
+  updatedAt: number
+  /** cover file inside the library cache (absolute path or null) */
+  coverPath: string | null
+  /** dominant cover color, "#RRGGBB" */
+  coverColor: string | null
+  description: string
+  language: string
+  publisher: string
+  series: string
+  /** reading progress 0..1 */
+  progress: number
+  /** engine-specific location (epub cfi / pdf page / txt offset) */
+  lastLocation: string | null
+  folderIds: string[]
+  /** AI-assigned series key, also mirrored into folderIds */
+  seriesKey: string | null
+  favorite: boolean
+  tags: string[]
+  /** original path when importMode === 'reference' */
+  sourcePath: string | null
+}
+
+export interface FolderRecord {
+  id: string
+  name: string
+  parentId: string | null
+  kind: 'manual' | 'series' | 'smart'
+  color: string | null
+  order: number
+  createdAt: number
+  /** smart folders created by the AI classifier keep their prompt here */
+  prompt?: string
+}
+
+export interface LibraryState {
+  books: BookRecord[]
+  folders: FolderRecord[]
+  rootDir: string
+  importing: { total: number; done: number; current: string } | null
+}
+
+export interface ImportOutcome {
+  added: BookRecord[]
+  skipped: { path: string; reason: string }[]
+}
+
+export interface BookContent {
+  id: string
+  format: BookFormat
+  /** utf-8 text for txt/fb2/rtf/html, base64 for epub/pdf/mobi binaries */
+  data: string
+  encoding: 'utf8' | 'base64'
+  filePath: string
+  title: string
+}
+
+export interface ClassifyResult {
+  createdFolders: FolderRecord[]
+  assignments: { bookId: string; folderId: string; confidence: number; reason: string }[]
+  model: string
+  raw?: string
+  error?: string
+}
+
+export interface CatalogBook {
+  source: 'gutendex' | 'openlibrary' | 'standardebooks'
+  id: string
+  title: string
+  author: string
+  language: string
+  cover: string | null
+  formats: { mime: string; url: string }[]
+  downloadUrl: string | null
+  downloads: number
+}
+
+export interface CatalogQuery {
+  source: CatalogBook['source']
+  query: string
+  page?: number
+}
+
+export interface CatalogResult {
+  books: CatalogBook[]
+  total: number
+  error?: string
+}
+
+// ---------------------------------------------------------------------------
+// AI / Sync
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface AIStatus {
+  configured: boolean
+  enabled: boolean
+  baseUrl: string
+  model: string
+  lastError: string | null
+}
+
+export interface AIChatResult {
+  ok: boolean
+  content: string
+  error: string | null
+  usage?: { prompt: number; completion: number; total: number }
+  ms: number
+}
+
+export interface SyncStatus {
+  enabled: boolean
+  configured: boolean
+  lastSyncAt: string | null
+  running: boolean
+  lastResult: { ok: boolean; message: string; at: number } | null
+}
+
+// ---------------------------------------------------------------------------
+// Misc / events
+// ---------------------------------------------------------------------------
+
+export interface NavTool {
+  id: string
+  name: string
+  icon: string
+  order: number
+  visible: boolean
+}
+
+export interface AppInfo {
+  version: string
+  electron: string
+  chrome: string
+  node: string
+  platform: string
+  arch: string
+  userData: string
+  logsDir: string
+}
+
+export interface ToastEvent {
+  id: string
+  kind: 'info' | 'success' | 'warning' | 'error'
+  message: string
+}
+
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? (T[K] extends unknown[] ? T[K] : DeepPartial<T[K]>) : T[K]
+}
+
+export interface SettingsPatch {
+  appearance?: Partial<AppearanceSettings>
+  ai?: Partial<AISettings>
+  sync?: Partial<WebDavSettings>
+  proxy?: Partial<ProxySettings>
+  library?: Partial<LibrarySettings>
+  general?: Partial<GeneralSettings>
+}

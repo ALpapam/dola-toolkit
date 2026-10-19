@@ -1,0 +1,44 @@
+{
+  "name": "dola-toolkit",
+  "version": "0.0.1",
+  "description": "Dola Toolkit - MD3 desktop toolbox (proxy + library + settings)",
+  "main": "./out/main/index.js",
+  "author": "ALpapam",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "electron-vite build",
+    "pack:dir": "electron-vite build && electron-builder --win --dir",
+    "dist": "electron-vite build && electron-builder --win portable --x64",
+    "shots": "node scripts/shots.mjs",
+    "run:app": "node scripts/run-app.mjs",
+    "icon": "node scripts/gen-icon.mjs",
+    "dist:full": "node scripts/build-release.mjs"
+  },
+  "dependencies": {
+    "@material/material-color-utilities": "^0.4.0",
+    "epubjs": "^0.3.93",
+    "jszip": "^3.10.2",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@iconify-json/material-symbols": "^1.2.95",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4"
+  }
+}
