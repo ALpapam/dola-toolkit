@@ -286,12 +286,31 @@ export interface TurnVisual {
 /**
  * Computes the CSS transform/style for the outgoing page.
  *
- * cover — the page rotates around its spine like a real sheet being peeled,
- *         which is what Tencent Reading/Fanqie feel like.
+ * cover — the sheet arcs up and rotates around its spine while a soft light
+ *         sweep travels across it. This is the "paper" feel: the previous
+ *         implementation rotated a flat rectangle with a hard inset shadow,
+ *         which read as stiff and mechanical.
  * slide — the page slides straight out, exposing the next one underneath.
  * curl  — the page slides while a shadow band sweeps across its inner edge.
+ *
+ * The eased value also drives `--turn-shade`, a gradient overlay declared in
+ * CSS that tints the sheet as it lifts away from the light.
  */
-export function pageTurnStyle(visual: TurnVisual, pageWidth: number): React.CSSProperties {
+
+/** Soft landing for a completed turn (no bounce — the sheet is leaving). */
+export const TURN_EASE_OUT = 'cubic-bezier(.22,1,.36,1)'
+/** Gentle overshoot for a cancelled gesture springing back to rest. */
+export const TURN_EASE_SPRING = 'cubic-bezier(.34,1.4,.64,1)'
+export const TURN_DURATION = 460
+export const SPRING_DURATION = 520
+
+/** CSSProperties plus the two custom properties the turn animation writes. */
+export type TurnStyle = React.CSSProperties & {
+  '--turn-shade'?: string | number
+  '--turn-flip'?: string | number
+}
+
+export function pageTurnStyle(visual: TurnVisual, pageWidth: number): TurnStyle {
   const { progress, dir, dragging, mode } = visual
   const sign = dir === 'next' ? -1 : 1
   // `progress` is the single source of truth: 0 is the resting page. While the
@@ -300,36 +319,54 @@ export function pageTurnStyle(visual: TurnVisual, pageWidth: number): React.CSSP
   // committed page is replaced, which also renders at progress 0.
   const eased = Math.max(0, Math.min(1, progress))
 
-  if (mode === 'none' || eased === 0) return {}
+  if (mode === 'none' || eased === 0) {
+    return { ['--turn-shade' as string]: '0', ['--turn-flip' as string]: String(sign) }
+  }
+
+  // a bell curve: 0 at both ends, 1 in the middle — used for the arc/lift so the
+  // sheet rises as it leaves and settles back down instead of pivoting flat
+  const arc = Math.sin(eased * Math.PI)
 
   if (mode === 'slide') {
     return {
-      transform: `translate3d(${sign * eased * pageWidth}px, 0, 0)`,
+      transform: `translate3d(${sign * eased * pageWidth}px, ${-arc * 6}px, 0) scale(${1 - arc * 0.015})`,
       opacity: '1',
-      transition: dragging ? 'none' : 'transform 320ms cubic-bezier(.2,0,0,1), opacity 320ms linear',
-      willChange: 'transform'
+      ['--turn-shade' as string]: String(eased * 0.8),
+      ['--turn-flip' as string]: String(sign),
+      boxShadow: `0 ${arc * 22}px ${arc * 44}px -${arc * 20}px rgba(0,0,0,.38)`,
+      willChange: 'transform',
+      transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
     }
   }
 
   if (mode === 'curl') {
     return {
-      transform: `translate3d(${sign * eased * pageWidth * 0.92}px, 0, 0) skewY(${sign * eased * 1.2}deg)`,
+      transform: `translate3d(${sign * eased * pageWidth * 0.9}px, ${-arc * 10}px, 0) rotate(${sign * eased * 1.6}deg) scale(${1 - arc * 0.02})`,
       opacity: '1',
-      transition: dragging ? 'none' : 'transform 360ms cubic-bezier(.2,0,0,1), opacity 360ms linear',
-      boxShadow: `inset ${-sign * eased * 42}px 0 46px -22px rgba(0,0,0,.55)`,
-      willChange: 'transform'
+      ['--turn-shade' as string]: String(eased * 1.1),
+      ['--turn-flip' as string]: String(sign),
+      boxShadow: `inset ${-sign * eased * 46}px 0 52px -24px rgba(0,0,0,.5)`,
+      willChange: 'transform',
+      transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
     }
   }
 
-  // cover: rotate around the spine on the side we are leaving from
-  const angle = eased * 78 // degrees
+  // cover: lift the sheet, rotate it around the spine, and let it settle softly
+  const angle = eased * 70 // degrees — a little less than before so it reads softer
   const origin = dir === 'next' ? 'left center' : 'right center'
   return {
-    transform: `perspective(1800px) rotateY(${dir === 'next' ? -angle : angle}deg)`,
+    transform:
+      `perspective(2200px) ` +
+      `translate3d(${sign * eased * 8}px, ${-arc * 12}px, 0) ` +
+      `rotateY(${dir === 'next' ? -angle : angle}deg) ` +
+      `scale(${1 - arc * 0.018})`,
     transformOrigin: origin,
-    transition: dragging ? 'none' : 'transform 380ms cubic-bezier(.2,0,0,1)',
-    boxShadow: `inset 0 0 ${eased * 40}px rgba(0,0,0,${0.28 * eased})`,
-    willChange: 'transform'
+    ['--turn-shade' as string]: String(eased),
+    ['--turn-flip' as string]: String(sign),
+    // a soft cast shadow that grows as the page lifts, instead of a hard inset
+    boxShadow: `0 ${arc * 26}px ${arc * 52}px -${arc * 22}px rgba(0,0,0,.42)`,
+    willChange: 'transform',
+    transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
   }
 }
 

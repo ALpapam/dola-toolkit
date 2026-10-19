@@ -121,10 +121,13 @@ img {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  /* The divider is drawn with an inset shadow rather than a border: a real
+     border would eat 1px of the content box, so the 52px icon squares would
+     overflow and the app logo would sit off-centre (left gap != right gap). */
   padding: var(--sp-2);
   gap: var(--sp-1);
   background: var(--md-surface-container-low);
-  border-right: 1px solid var(--md-outline-variant);
+  box-shadow: inset -1px 0 0 var(--md-outline-variant);
   transition: width var(--dur-4) var(--ease-emphasized), flex-basis var(--dur-4) var(--ease-emphasized);
   z-index: 20;
   overflow: hidden;

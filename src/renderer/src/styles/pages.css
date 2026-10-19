@@ -887,6 +887,41 @@
 .reader-spread.current {
   transform-style: preserve-3d;
   backface-visibility: hidden;
+  /* NOTE: no `filter` here. A filter flattens the 3D rendering context, so the
+     page rotation would lose its perspective and look like a flat sticker
+     sliding over — that is what made the old animation feel stiff. */
+  filter: none;
+}
+
+/* the sheet that actually turns */
+.reader-page.reader-page-turnable {
+  position: relative;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  /* must stay opaque, or the page revealed underneath shows through the text */
+  background: var(--md-surface-container-lowest);
+  will-change: transform;
+}
+
+/* Soft light sweep across the lifting sheet. `--turn-shade` (0..1) and
+   `--turn-flip` (+1 next / -1 prev) are written by pageTurnStyle; mirroring the
+   gradient with scaleX is cheaper than swapping the whole background. */
+.reader-page.reader-page-turnable::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  transform: scaleX(var(--turn-flip, 1));
+  opacity: clamp(0, var(--turn-shade, 0), 1);
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.34) 0%,
+    rgba(0, 0, 0, 0.14) 38%,
+    rgba(255, 255, 255, 0.06) 72%,
+    rgba(255, 255, 255, 0.16) 100%
+  );
 }
 
 .reader-spread {

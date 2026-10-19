@@ -10,7 +10,15 @@ import { EpubView, type EpubViewHandle } from './EpubView'
 import { paginate, type PageSlice } from './paginate'
 import { useLibrary } from './store'
 import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
-import { useDragFlip, useEpubGestureBridge, pageTurnStyle } from './useDragFlip'
+import {
+  useDragFlip,
+  useEpubGestureBridge,
+  pageTurnStyle,
+  TURN_DURATION,
+  TURN_EASE_OUT,
+  TURN_EASE_SPRING,
+  SPRING_DURATION
+} from './useDragFlip'
 
 /* ------------------------------------------------------------------ */
 /* PDF.js is loaded lazily so txt/epub readers never pay for it        */
@@ -372,37 +380,102 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         // tracking the pointer: no interpolation lag
         el.style.transition = 'none'
       } else if (progress === 0) {
-        // returning to rest after a cancelled gesture
-        el.style.transition = 'transform 380ms cubic-bezier(.2,0,0,1), box-shadow 380ms linear'
+        // Spring back to rest after a cancelled gesture. The reflow in between
+        // is required for the same reason as in completeTurn: the gesture left
+        // `transition: none` applied, so without a flush the browser would
+        // resolve the change in one batch and the sheet would snap back.
+        el.style.transition = 'none'
+        void el.offsetWidth
+        el.style.transition = `transform ${SPRING_DURATION}ms ${TURN_EASE_SPRING}, box-shadow ${SPRING_DURATION}ms linear, opacity ${SPRING_DURATION}ms linear`
       }
       el.style.transform = style.transform ?? ''
       el.style.transformOrigin = (style.transformOrigin as string) ?? ''
       el.style.boxShadow = (style.boxShadow as string) ?? ''
       el.style.opacity = (style.opacity as string) ?? ''
+      // the light sweep is driven by a CSS variable so it interpolates too
+      const shade = style['--turn-shade']
+      if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
+      const flip = style['--turn-flip']
+      if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
     },
     []
   )
 
   /**
-   * Runs the *completion* half of a page turn: instead of snapping the sheet
-   * back to rest and swapping the text underneath (which reads as "no
-   * animation"), finish rotating it all the way out, then render the new page
-   * at rest. This is what makes a committed drag feel like a real page turn.
+   * Runs the *completion* half of a page turn.
+   *
+   * This is driven by requestAnimationFrame rather than a CSS transition on
+   * purpose. The drag pins `transition: none` on the element, and once that
+   * style has been resolved the browser coalesces a later
+   * "transition + new value" write into a single style change — the sheet jumps
+   * straight to the end instead of animating (which is exactly the "animation
+   * is too hard / never plays" symptom). Driving every frame ourselves gives a
+   * guaranteed smooth curve and lets the transform, the cast shadow and the
+   * light sweep advance together.
    */
-  const completeTurn = useCallback((dir: 'next' | 'prev', mode: FlipAnimation) => {
+  const completeTurn = useCallback(
+    (dir: 'next' | 'prev', mode: FlipAnimation, from: number) => {
+      const el = turnableRef.current
+      if (!el || mode === 'none') return Promise.resolve()
+
+      const w = pageBoxRef.current.w
+      const duration = TURN_DURATION
+      const start = performance.now()
+      el.style.transition = 'none'
+
+      const apply = (p: number): void => {
+        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode }, w)
+        el.style.transform = style.transform ?? ''
+        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+        el.style.boxShadow = (style.boxShadow as string) ?? ''
+        const shade = style['--turn-shade']
+        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
+        const flip = style['--turn-flip']
+        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+      }
+
+      return new Promise<void>((resolve) => {
+        const step = (now: number): void => {
+          const t = Math.min(1, (now - start) / duration)
+          // easeOutQuint — a long, soft landing instead of a hard stop
+          const eased = 1 - Math.pow(1 - t, 5)
+          // continue from wherever the finger left the sheet
+          apply(from + (1 - from) * eased)
+          if (t < 1) requestAnimationFrame(step)
+          else resolve()
+        }
+        requestAnimationFrame(step)
+      })
+    },
+    []
+  )
+
+  /** Springs the sheet back to rest when the gesture was below the threshold. */
+  const springBack = useCallback((dir: 'next' | 'prev', from: number) => {
     const el = turnableRef.current
-    if (!el || mode === 'none') return Promise.resolve()
-
+    if (!el) return Promise.resolve()
     const w = pageBoxRef.current.w
-    const finished = pageTurnStyle({ progress: 1, dir, dragging: false, mode }, w)
-    const duration = mode === 'cover' ? 300 : 260
-
+    const duration = SPRING_DURATION
+    const start = performance.now()
+    el.style.transition = 'none'
     return new Promise<void>((resolve) => {
-      el.style.transition = `transform ${duration}ms cubic-bezier(.3,0,.2,1), box-shadow ${duration}ms linear`
-      el.style.transform = finished.transform ?? ''
-      el.style.boxShadow = (finished.boxShadow as string) ?? ''
-      el.style.transformOrigin = (finished.transformOrigin as string) ?? ''
-      window.setTimeout(resolve, duration)
+      const step = (now: number): void => {
+        const t = Math.min(1, (now - start) / duration)
+        // gentle overshoot so the paper settles instead of stopping dead
+        const eased = 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2)
+        const p = Math.max(0, from * (1 - eased))
+        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode: flipModeRef.current }, w)
+        el.style.transform = style.transform ?? ''
+        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+        el.style.boxShadow = (style.boxShadow as string) ?? ''
+        const shade = style['--turn-shade']
+        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
+        const flip = style['--turn-flip']
+        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+        if (t < 1) requestAnimationFrame(step)
+        else resolve()
+      }
+      requestAnimationFrame(step)
     })
   }, [])
 
@@ -421,12 +494,13 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     },
     onRelease: (committed) => {
       const dir = dragState.current.dir
+      const from = dragState.current.progress
       dragState.current = { progress: 0, dir, engaged: false }
       setSettling(true)
       if (committed) {
         // finish the rotation, THEN advance the content — otherwise the page
         // snaps back to rest and the turn is invisible
-        void completeTurn(dir, flipModeRef.current).then(() => {
+        void completeTurn(dir, flipModeRef.current, from).then(() => {
           if (dir === 'next') goNext()
           else goPrev()
           setSettling(false)
@@ -435,12 +509,11 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         })
       } else {
         // under the threshold: spring back
-        paintTurn(0, dir, false)
-        window.setTimeout(() => {
+        void springBack(dir, from).then(() => {
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
           paintTurn(0, 'next', false)
-        }, 380)
+        })
       }
     }
   })
@@ -458,45 +531,56 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     },
     onRelease: (committed, dir) => {
       setSettling(true)
+      const el = document.querySelector('.epub-host') as HTMLElement | null
+      const mode = flipModeRef.current
+      // The chapter itself lives in epub.js's iframe and cannot be transformed
+      // per-page, so the whole host sheet is animated with the same rAF-driven
+      // curve the prose pages use (a CSS transition here would not interpolate,
+      // for the same coalescing reason documented on completeTurn).
+      const animateHost = (from: number, to: number, duration: number): Promise<void> => {
+        if (!el || mode === 'none') return Promise.resolve()
+        el.style.transition = 'none'
+        const w = el.getBoundingClientRect().width
+        const start = performance.now()
+        return new Promise((resolve) => {
+          const step = (now: number): void => {
+            const t = Math.min(1, (now - start) / duration)
+            const eased = 1 - Math.pow(1 - t, 5)
+            const p = from + (to - from) * eased
+            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode }, w)
+            el.style.transform = style.transform ?? ''
+            el.style.boxShadow = (style.boxShadow as string) ?? ''
+            el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+            if (t < 1) requestAnimationFrame(step)
+            else resolve()
+          }
+          requestAnimationFrame(step)
+        })
+      }
+
+      const resetHost = (): void => {
+        if (!el) return
+        el.style.transition = ''
+        el.style.transform = ''
+        el.style.boxShadow = ''
+        el.style.transformOrigin = ''
+      }
+
       if (committed) {
-        // animate the chapter out, then let epub.js advance to the next page
-        const el = document.querySelector('.epub-host') as HTMLElement | null
-        const mode = flipModeRef.current
-        const run = (): void => {
+        void animateHost(0, 1, TURN_DURATION).then(() => {
           if (dir === 'next') goNext()
           else goPrev()
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
-          if (el) {
-            el.style.transition = ''
-            el.style.transform = ''
-            el.style.boxShadow = ''
-          }
-        }
-        if (el && mode !== 'none') {
-          const w = el.getBoundingClientRect().width
-          const style = pageTurnStyle({ progress: 1, dir, dragging: false, mode }, w)
-          el.style.transition = 'transform 300ms cubic-bezier(.3,0,.2,1), box-shadow 300ms linear'
-          el.style.transform = style.transform ?? ''
-          el.style.boxShadow = (style.boxShadow as string) ?? ''
-          el.style.transformOrigin = (style.transformOrigin as string) ?? ''
-          window.setTimeout(run, 300)
-        } else {
-          run()
-        }
+          resetHost()
+        })
       } else {
-        // under the threshold: spring back
-        const el = document.querySelector('.epub-host') as HTMLElement | null
-        if (el) {
-          el.style.transition = 'transform 280ms cubic-bezier(.2,0,0,1)'
-          el.style.transform = ''
-          el.style.boxShadow = ''
-        }
+        // nothing was painted during the gesture, so just settle back to rest
         window.setTimeout(() => {
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
-          if (el) el.style.transition = ''
-        }, 290)
+          resetHost()
+        }, 260)
       }
     }
   })
