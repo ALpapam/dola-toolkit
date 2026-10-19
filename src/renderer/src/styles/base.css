@@ -230,7 +230,7 @@ img {
   justify-content: center;
   gap: var(--sp-3);
   width: 100%;
-  height: 48px;
+  height: var(--rail-item-size);
   flex: 0 0 auto;
   border-radius: var(--shape-lg);
   padding: 0;
@@ -240,6 +240,15 @@ img {
     color var(--dur-2) var(--ease-standard);
   overflow: hidden;
   white-space: nowrap;
+}
+/* collapsed: a true square centred on the rail axis, so every icon sits in an
+   identical box instead of a wide one */
+.rail:not(.expanded) .rail-item,
+.rail:not(.expanded) .rail-expand-btn {
+  width: var(--rail-item-size);
+  height: var(--rail-item-size);
+  margin: 0 auto;
+  border-radius: var(--shape-md);
 }
 .rail.expanded .rail-item,
 .rail.expanded .rail-expand-btn {

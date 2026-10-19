@@ -89,8 +89,10 @@
   --dur-5: 420ms;
 
   /* layout */
-  --rail-w: 88px;
+  --rail-w: 76px;
   --rail-w-expanded: 236px;
+  /* collapsed rail: inner square that holds one icon */
+  --rail-item-size: 52px;
   --titlebar-h: 40px;
   /* `--app-font` is written at runtime from Settings → 外观 → 字体 and always
      ends with a comma ("'Family',"). It is empty before a family is chosen, so

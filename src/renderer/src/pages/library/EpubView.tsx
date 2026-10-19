@@ -3,6 +3,7 @@ import { Icon } from '../../ui/Icon'
 import { Spinner } from '../../ui/controls'
 import { useApp } from '../../state/app'
 import { epubFontCss } from './fonts'
+import { attachGestureBridge } from './useDragFlip'
 import {
   configureRendition,
   openEpubFromBase64,
@@ -146,6 +147,20 @@ export function EpubView({
             if (el.textContent !== css) el.textContent = css
           } catch {
             /* typography is cosmetic */
+          }
+
+          // Forward drag gestures out of the chapter so the reader can turn
+          // pages by dragging the bottom corners of the sheet.
+          //
+          // Neither `eval` nor an injected inline <script> works here: the app
+          // CSP forbids unsafe-eval and the chapter is a separate document.
+          // Attaching a listener from the parent realm is a plain DOM operation
+          // though, and it fires for events dispatched inside the iframe — so
+          // the bridge is just a pair of cross-document listeners.
+          try {
+            attachGestureBridge(doc)
+          } catch {
+            /* gesture support is best effort */
           }
 
           const imgs = Array.from(doc.querySelectorAll('img'))

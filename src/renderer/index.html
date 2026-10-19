@@ -11,11 +11,17 @@
       * `dola-font:` is the custom scheme that streams bundled + user-imported
         reader fonts from the main process; it must be allowed for both fonts and
         fetch() (the reader warms the faces with document.fonts.load).
+      * `file:` is required in the packaged build: the page is loaded from
+        `file://…/app.asar/out/renderer/index.html`, whose *origin* is the opaque
+        "null", so `'self'` alone does not match the sibling assets or the
+        `frame-src` used by epub.js. In dev the page is served over http://localhost
+        and `'self'` works — hence the explicit file: entries that keep both modes
+        functional. Without them, opening an EPUB hangs forever at "正在解析 EPUB…".
       * script-src stays strict ('self' only): book HTML never executes script.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: file: https: dola-font:; style-src 'self' 'unsafe-inline' blob:; script-src 'self'; font-src 'self' data: blob: dola-font:; connect-src 'self' dola-font: http://127.0.0.1:* https: ws://localhost:*; frame-src 'self' blob: data:"
+      content="default-src 'self' file:; img-src 'self' data: blob: file: https: dola-font:; media-src 'self' blob: file: data:; style-src 'self' 'unsafe-inline' blob: file:; script-src 'self' file:; font-src 'self' data: blob: file: dola-font:; connect-src 'self' file: blob: data: dola-font: http://127.0.0.1:* https: ws://localhost:*; frame-src 'self' blob: data: file:"
     />
   </head>
   <body>

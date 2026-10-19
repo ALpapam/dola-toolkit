@@ -10,7 +10,7 @@ import { EpubView, type EpubViewHandle } from './EpubView'
 import { paginate, type PageSlice } from './paginate'
 import { useLibrary } from './store'
 import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
-import { useDragFlip, pageTurnStyle } from './useDragFlip'
+import { useDragFlip, useEpubGestureBridge, pageTurnStyle } from './useDragFlip'
 
 /* ------------------------------------------------------------------ */
 /* PDF.js is loaded lazily so txt/epub readers never pay for it        */
@@ -315,26 +315,16 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     return () => el.removeEventListener('wheel', onWheel)
   }, [goNext, goPrev])
 
-  /* the spec: hold/click the BOTTOM quarter of the page, left = prev, right = next */
-  const onStageClick = (e: React.MouseEvent): void => {
-    if (flipMode === 'button') return
-    const stage = stageRef.current
-    if (!stage) return
-    const r = stage.getBoundingClientRect()
-    const x = e.clientX - r.left
-    const y = e.clientY - r.top
-    if (y < r.height * 0.75) return
-    if (x < r.width * 0.25) goPrev()
-    else if (x > r.width * 0.75) goNext()
-  }
+  /* Clicking the page no longer turns it: page turning is drag-only (bottom-left
+     / bottom-right drag on the sheet) plus the < > buttons and keyboard. */
 
   const leftSlice = prosePages[index]
   const rightSlice = twoUp ? prosePages[index + 1] : undefined
 
   /* ---------------- drag-to-turn ---------------- */
-  // grab the left/right quarter of the page and pull: the page follows the
-  // pointer, then completes or springs back (Tencent Reading / Fanqie style)
-  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none' && !isEpub
+  // Grab the bottom-left / bottom-right corner of the sheet and pull: the page
+  // follows the pointer, then commits or springs back (Tencent Reading style).
+  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none'
   const [drag, setDrag] = useState<{ progress: number; dir: 'next' | 'prev'; engaged: boolean }>({
     progress: 0,
     dir: 'next',
@@ -379,6 +369,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     threshold: readerCfg?.dragThreshold ?? 26,
     stageRef,
     pageWidth: twoUp ? pageBox.w * 2 + 8 : pageBox.w,
+    zone: 'corners',
     onNext: goNext,
     onPrev: goPrev,
     onProgress: (progress, dir, engaged) => {
@@ -399,12 +390,29 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     }
   })
 
-  const turnVisual = {
-    progress: drag.progress,
-    dir: drag.dir,
-    dragging: drag.engaged && !settling,
-    mode: flipAnimation
-  }
+  // EPUB renders inside an iframe, so the same gesture arrives through a
+  // bridge instead of the stage's pointer events.
+  useEpubGestureBridge({
+    enabled: dragEnabled && isEpub,
+    stageRef,
+    threshold: readerCfg?.dragThreshold ?? 26,
+    onNext: goNext,
+    onPrev: goPrev,
+    onProgress: (progress, dir, engaged) => {
+      if (!drag.engaged && engaged) setDrag({ progress, dir, engaged })
+    },
+    onRelease: (committed, dir) => {
+      if (!committed) {
+        setSettling(true)
+        window.setTimeout(() => {
+          setSettling(false)
+          setDrag({ progress: 0, dir: 'next', engaged: false })
+        }, 260)
+      } else {
+        setDrag({ progress: 0, dir, engaged: false })
+      }
+    }
+  })
 
   const toggleSpread = async (): Promise<void> => {
     if (!settings) return
@@ -413,8 +421,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     useApp.getState().setSettings(patched)
     toast.info(next === 'always' ? '已切换为双页' : '已切换为单页')
   }
-
-  const flipZonesActive = flipMode !== 'button'
 
   return (
     <div className="reader">
@@ -454,9 +460,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       <div
         className={`reader-stage ${drag.engaged && !settling ? 'is-dragging' : ''}`}
         ref={stageRef}
-        onClick={onStageClick}
         onPointerDown={onPointerDown}
-        style={{ cursor: flipZonesActive ? 'pointer' : 'default' }}
       >
         {error ? (
           <div className="empty">
@@ -563,13 +567,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
           </div>
         )}
 
-        {flipZonesActive ? (
-          <>
-            <div className="flip-zone left" aria-hidden />
-            <div className="flip-zone right" aria-hidden />
-          </>
-        ) : null}
-
         {flipMode !== 'zone' ? (
           <>
             <button
@@ -581,7 +578,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
               disabled={!isEpub && logical <= 0}
               title="上一页 (←)"
             >
-              <Icon name="chevronUp" size={26} />
+              <Icon name="chevronLeft" size={26} />
             </button>
             <button
               className="flip-fab next"
@@ -592,7 +589,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
               disabled={!isEpub && logical >= Math.max(0, totalPages - 1)}
               title="下一页 (→)"
             >
-              <Icon name="chevronDown" size={26} />
+              <Icon name="chevronRight" size={26} />
             </button>
           </>
         ) : null}
