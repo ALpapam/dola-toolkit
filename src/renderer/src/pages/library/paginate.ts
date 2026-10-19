@@ -10,6 +10,8 @@ export interface PaginationOptions {
   /** horizontal + vertical padding inside .page-inner */
   padX: number
   padY: number
+  /** CSS font-family for the reading text; must match the rendered page */
+  fontFamily?: string
 }
 
 export interface PageSlice {
@@ -30,7 +32,7 @@ export interface PageSlice {
  * longest text prefix that still fits, so no content is ever clipped.
  */
 export function paginate(blocks: Block[], opts: PaginationOptions): PageSlice[] {
-  const { width, height, fontSize, lineHeight, padX, padY } = opts
+  const { width, height, fontSize, lineHeight, padX, padY, fontFamily } = opts
   const probe = document.createElement('div')
   // NOTE: do not reuse the `.page-inner` class — it declares `position:absolute;
   // inset:0`, which collapses the probe's layout box and makes every paragraph
@@ -48,6 +50,9 @@ export function paginate(blocks: Block[], opts: PaginationOptions): PageSlice[] 
   probe.style.padding = `${padY}px ${padX}px`
   probe.style.fontSize = `${fontSize}px`
   probe.style.lineHeight = String(lineHeight)
+  // the probe must use the exact same face as the rendered page, otherwise the
+  // page count silently drifts once a custom font is selected
+  if (fontFamily) probe.style.fontFamily = fontFamily
   document.body.appendChild(probe)
 
   const measure = (html: string): number => {

@@ -9,6 +9,8 @@ import { buildSource, type RenderSource } from './formats'
 import { EpubView, type EpubViewHandle } from './EpubView'
 import { paginate, type PageSlice } from './paginate'
 import { useLibrary } from './store'
+import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
+import { useDragFlip, pageTurnStyle } from './useDragFlip'
 
 /* ------------------------------------------------------------------ */
 /* PDF.js is loaded lazily so txt/epub readers never pay for it        */
@@ -41,14 +43,18 @@ async function loadPdf(bytes: Uint8Array): Promise<PdfDoc> {
   return (await task.promise) as unknown as PdfDoc
 }
 
-const FONT_SIZE = 17
-const LINE_HEIGHT = 1.9
 const PAD_X = 30
 const PAD_Y = 34
 
 export function Reader({ book, onClose }: { book: BookRecord; onClose: () => void }): JSX.Element {
   const settings = useApp((s) => s.settings)
   const lib = settings?.library
+  const readerCfg = settings?.reader
+  const FONT_SIZE = readerCfg?.fontSize ?? 17
+  const LINE_HEIGHT = readerCfg?.lineHeight ?? 1.9
+  const flipAnimation = readerCfg?.flipAnimation ?? 'cover'
+  const fontId = readerCfg?.fontFamily ?? DEFAULT_READER_FONT_ID
+  const readingFamily = useApp((s) => s.readingFamily)
   const [source, setSource] = useState<RenderSource | null>(null)
   const [prosePages, setProsePages] = useState<PageSlice[]>([])
   const [pdf, setPdf] = useState<PdfDoc | null>(null)
@@ -86,22 +92,32 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
+    let last = { w: 0, h: 0 }
     const measure = (): void => {
       const r = el.getBoundingClientRect()
       const w = Math.floor(r.width)
       const h = Math.floor(r.height)
+      if (w === last.w && h === last.h) return
+      last = { w, h }
       setGeo((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
     }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
+    // the stage is sized by its ancestors; observing the reader root as well
+    // catches window-level resizes that do not change the stage's own box
+    const host = el.parentElement
+    if (host) ro.observe(host)
     measure()
-    // ResizeObserver can miss layout flushes caused by the OS/DPI or by a
-    // maximize, so window resize is kept as a cheap, idempotent fallback.
     window.addEventListener('resize', measure)
     window.addEventListener('maximize', measure)
     window.addEventListener('unmaximize', measure)
+    // a maximized ↦ restored transition sometimes settles a frame late
+    const t1 = window.setTimeout(measure, 120)
+    const t2 = window.setTimeout(measure, 400)
     return () => {
       ro.disconnect()
+      clearTimeout(t1)
+      clearTimeout(t2)
       window.removeEventListener('resize', measure)
       window.removeEventListener('maximize', measure)
       window.removeEventListener('unmaximize', measure)
@@ -182,14 +198,15 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       fontSize: FONT_SIZE,
       lineHeight: LINE_HEIGHT,
       padX: PAD_X,
-      padY: PAD_Y
+      padY: PAD_Y,
+      fontFamily: readingFamily
     })
     setProsePages(pages)
     const saved = Number(bookRef.current.lastLocation ?? 0) || 0
     const aligned = twoUp ? saved - (saved % 2) : saved
     setIndex(Math.min(Math.max(0, aligned), Math.max(0, pages.length - 1)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, pageBox.w, pageBox.h, twoUp, book.id])
+  }, [source, pageBox.w, pageBox.h, twoUp, book.id, readingFamily, FONT_SIZE, LINE_HEIGHT])
 
   const isEpub = source?.kind === 'epub'
   const totalPages = isEpub ? 0 : source?.kind === 'pdf' ? (pdf?.numPages ?? 0) : prosePages.length
@@ -314,6 +331,81 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   const leftSlice = prosePages[index]
   const rightSlice = twoUp ? prosePages[index + 1] : undefined
 
+  /* ---------------- drag-to-turn ---------------- */
+  // grab the left/right quarter of the page and pull: the page follows the
+  // pointer, then completes or springs back (Tencent Reading / Fanqie style)
+  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none' && !isEpub
+  const [drag, setDrag] = useState<{ progress: number; dir: 'next' | 'prev'; engaged: boolean }>({
+    progress: 0,
+    dir: 'next',
+    engaged: false
+  })
+  const [settling, setSettling] = useState(false)
+
+  // latest geometry/mode for the imperative painter (avoids stale closures)
+  const pageBoxRef = useRef({ w: pageBox.w })
+  const flipModeRef = useRef(flipAnimation)
+  pageBoxRef.current = { w: pageBox.w }
+  flipModeRef.current = flipAnimation
+
+  // Live gesture visual is written straight to the DOM (transform on the
+  // turnable page). Routing it through React state would re-render the whole
+  // reader on every pointer move — and any unrelated re-render (a settings
+  // broadcast, a font load) would snap the page back mid-gesture.
+  const turnableRef = useRef<HTMLDivElement | null>(null)
+  const dragState = useRef({ progress: 0, dir: 'next' as 'next' | 'prev', engaged: false })
+
+  const paintTurn = useCallback(
+    (progress: number, dir: 'next' | 'prev', engaged: boolean) => {
+      const el = turnableRef.current
+      if (!el) return
+      const width = engaged ? el.getBoundingClientRect().width : pageBoxRef.current.w
+      const style = pageTurnStyle({ progress, dir, dragging: engaged, mode: flipModeRef.current }, width)
+      if (!engaged && progress === 0) {
+        el.style.transition = 'transform 380ms cubic-bezier(.2,0,0,1), box-shadow 380ms linear'
+      } else if (engaged) {
+        el.style.transition = 'none'
+      }
+      el.style.transform = style.transform ?? ''
+      el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+      el.style.boxShadow = (style.boxShadow as string) ?? ''
+      el.style.opacity = (style.opacity as string) ?? ''
+    },
+    []
+  )
+
+  const { onPointerDown } = useDragFlip({
+    enabled: dragEnabled,
+    threshold: readerCfg?.dragThreshold ?? 26,
+    stageRef,
+    pageWidth: twoUp ? pageBox.w * 2 + 8 : pageBox.w,
+    onNext: goNext,
+    onPrev: goPrev,
+    onProgress: (progress, dir, engaged) => {
+      dragState.current = { progress, dir, engaged }
+      if (!drag.engaged && engaged) setDrag({ progress, dir, engaged })
+      paintTurn(progress, dir, engaged)
+    },
+    onRelease: (committed) => {
+      dragState.current = { progress: 0, dir: dragState.current.dir, engaged: false }
+      // animate back to rest, then drop the gesture state
+      paintTurn(0, dragState.current.dir, false)
+      setSettling(true)
+      window.setTimeout(() => {
+        setSettling(false)
+        setDrag({ progress: 0, dir: 'next', engaged: false })
+        paintTurn(0, 'next', false)
+      }, committed ? 60 : 380)
+    }
+  })
+
+  const turnVisual = {
+    progress: drag.progress,
+    dir: drag.dir,
+    dragging: drag.engaged && !settling,
+    mode: flipAnimation
+  }
+
   const toggleSpread = async (): Promise<void> => {
     if (!settings) return
     const next: LibrarySettings['spreadMode'] = twoUp ? 'never' : 'always'
@@ -360,9 +452,10 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       </div>
 
       <div
-        className="reader-stage"
+        className={`reader-stage ${drag.engaged && !settling ? 'is-dragging' : ''}`}
         ref={stageRef}
         onClick={onStageClick}
+        onPointerDown={onPointerDown}
         style={{ cursor: flipZonesActive ? 'pointer' : 'default' }}
       >
         {error ? (
@@ -386,6 +479,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
             spread={twoUp ? 'auto' : 'none'}
             theme={resolvedTheme}
             fontSize={FONT_SIZE}
+            fontFamily={fontId}
             startLocation={book.lastLocation}
             onLocation={(pct, cfi) => {
               setEpubPct(pct)
@@ -402,20 +496,70 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
           />
         ) : (
           <div
-            className="reader-spread"
-            key={`${index}-${twoUp ? 'd' : 's'}`}
-            style={{ ['--turn-dir' as string]: turnDir === 'next' ? '18px' : '-18px' }}
+            className="reader-spread-wrap"
+            style={{ ['--reading-font' as string]: readingFamily }}
           >
-            <div className={`reader-page ${twoUp ? 'left-page' : 'only'} page-turn ${leftSlice?.image ? 'illustration-page' : ''}`} style={{ width: pageBox.w, height: pageBox.h }}>
-              <div className="page-inner" dangerouslySetInnerHTML={{ __html: leftSlice?.html ?? '' }} />
-              <span className="page-num">{index + 1}</span>
-            </div>
-            {twoUp && rightSlice ? (
-              <div className={`reader-page right-page page-turn ${rightSlice?.image ? 'illustration-page' : ''}`} style={{ width: pageBox.w, height: pageBox.h }}>
-                <div className="page-inner" dangerouslySetInnerHTML={{ __html: rightSlice.html }} />
-                <span className="page-num">{index + 2}</span>
+            {/* the page being revealed underneath: shows the *next* spread so the
+                drag feels like lifting a real sheet (Tencent Reading / Fanqie) */}
+            <div
+              className="reader-spread under"
+              style={{ width: twoUp ? pageBox.w * 2 + 8 : pageBox.w, height: pageBox.h }}
+              aria-hidden
+            >
+              {drag.dir === 'prev' && index > 0 ? (
+                <div className="reader-page-nested">
+                  <div
+                    className="page-inner"
+                    style={{ fontFamily: 'var(--reading-font, var(--font-reading))' }}
+                    dangerouslySetInnerHTML={{
+                      __html: prosePages[Math.max(0, index - step)]?.html ?? ''
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="reader-page-nested">
+                  <div
+                    className="page-inner"
+                    style={{ fontFamily: 'var(--reading-font, var(--font-reading))' }}
+                    dangerouslySetInnerHTML={{
+                      __html: prosePages[Math.min(prosePages.length - 1, index + step)]?.html ?? ''
+                    }}
+                  />
+                </div>
+              )}
+              <div className="under-page-brand">
+                <Icon name="bookOpen" size={30} />
+                <span>{book.title}</span>
               </div>
-            ) : null}
+            </div>
+
+            <div
+              className={`reader-spread current ${drag.engaged ? 'is-dragging' : ''}`}
+              key={`${index}-${twoUp ? 'd' : 's'}`}
+              style={{
+                ['--turn-dir' as string]: turnDir === 'next' ? '18px' : '-18px',
+                ['--reading-font' as string]: readingFamily
+              }}
+            >
+              <div
+                ref={twoUp ? undefined : turnableRef}
+                className={`reader-page ${twoUp ? 'left-page' : 'only'} page-turn ${leftSlice?.image ? 'illustration-page' : ''} ${drag.engaged && twoUp ? 'is-static-half' : ''} ${twoUp ? '' : 'reader-page-turnable'}`}
+                style={{ width: pageBox.w, height: pageBox.h }}
+              >
+                <div className="page-inner" dangerouslySetInnerHTML={{ __html: leftSlice?.html ?? '' }} />
+                <span className="page-num">{index + 1}</span>
+              </div>
+              {twoUp && rightSlice ? (
+                <div
+                  ref={turnableRef}
+                  className={`reader-page right-page page-turn ${rightSlice?.image ? 'illustration-page' : ''} reader-page-turnable`}
+                  style={{ width: pageBox.w, height: pageBox.h }}
+                >
+                  <div className="page-inner" dangerouslySetInnerHTML={{ __html: rightSlice.html }} />
+                  <span className="page-num">{index + 2}</span>
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
 

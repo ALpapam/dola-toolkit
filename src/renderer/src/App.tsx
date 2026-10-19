@@ -9,12 +9,15 @@ import { ToastHost } from './ui/toast'
 import { NavRail } from './shell/NavRail'
 import { TitleBar } from './shell/TitleBar'
 import { initThemeListeners, useTheme } from './theme/store'
+import { installFontFaces, resolveReadingFamily } from './pages/library/fonts'
 
 export default function App(): JSX.Element {
   const page = useApp((s) => s.page)
   const ready = useApp((s) => s.ready)
   const setSettings = useApp((s) => s.setSettings)
   const setReady = useApp((s) => s.setReady)
+  const setFonts = useApp((s) => s.setFonts)
+  const setReadingFamily = useApp((s) => s.setReadingFamily)
   const themeSettings = useTheme((s) => s.setSettings)
   const refresh = useTheme((s) => s.refresh)
   const [bootError, setBootError] = useState<string | null>(null)
@@ -28,6 +31,18 @@ export default function App(): JSX.Element {
         if (cancelled) return
         setSettings(settings)
         themeSettings(settings)
+        // reader typography: install @font-face rules before the first paint so
+        // an opened book never flashes the fallback serif
+        try {
+          const list = await window.api.fonts.list()
+          if (!cancelled && list?.fonts) {
+            setFonts(list.fonts)
+            setReadingFamily(resolveReadingFamily(settings.reader.fontFamily, list.fonts))
+            installFontFaces(list.fonts)
+          }
+        } catch {
+          /* fonts are cosmetic — never block boot */
+        }
         await refresh(false)
         setReady(true)
       } catch (e) {
@@ -38,9 +53,21 @@ export default function App(): JSX.Element {
       cancelled = true
       off()
     }
-  }, [setSettings, setReady, themeSettings, refresh])
+  }, [setSettings, setReady, setFonts, setReadingFamily, themeSettings, refresh])
 
   const onToastBridge = useEffectBridge()
+
+  // Keep the store in sync for writes that did not come from this component's
+  // own patch() call (main broadcasts on every settings write). Without this a
+  // reader that is already on screen would keep the old font / flip animation.
+  useEffect(() => {
+    const off = window.api.settings.onChanged((next) => {
+      setSettings(next)
+      themeSettings(next)
+      setReadingFamily(resolveReadingFamily(next.reader.fontFamily, useApp.getState().fonts))
+    })
+    return off
+  }, [setSettings, themeSettings, setReadingFamily])
 
   if (bootError) {
     return (

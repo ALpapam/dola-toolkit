@@ -37,6 +37,14 @@
 | --- | --- |
 | ![settings sync](docs/screenshots/19-settings-sync.png) | ![dark](docs/screenshots/23-dark-home.png) |
 
+| 设置 · 字体与翻页 | 拖动翻页（仿真） |
+| --- | --- |
+| ![typography](docs/screenshots/27-settings-typography.png) | ![drag turn](docs/screenshots/28-drag-page-turn.png) |
+
+| 翻页动画 · 仿真 | 翻页动画 · 平移 | 翻页动画 · 卷曲 |
+| --- | --- | --- |
+| ![cover](docs/screenshots/29-flip-cover.png) | ![slide](docs/screenshots/30-flip-slide.png) | ![curl](docs/screenshots/31-flip-curl.png) |
+
 ---
 
 ## 界面
@@ -87,7 +95,9 @@
 | AI 归类 | 用预设提示词按书名判断是否同一系列/同一部作品，自动建「系列」文件夹归档 |
 | 手动分类 | 像文件管理器一样新建文件夹、建子文件夹、重命名、删除 |
 | **双页自适应** | **窗口宽比例 → 显示两页，翻页直接跳到下两页；窄比例 → 显示一页，翻到下一页**（按实际渲染高度分页，不截断文字） |
-| **两种翻页方式** | ① 左右悬浮按钮上下翻页；② 按住页面**右下角 1/4 区域**翻到下一页、按住**左下角 1/4 区域**翻回上一页 |
+| **拖动翻页** | 按住页面**左/右 1/4 区域**向另一侧拖动，书页会**跟随鼠标 1:1 移动**；拖过阈值（默认页面宽度的 26%）或快速甩动即翻页，否则回弹。操作手感与腾讯阅读 / 番茄小说一致 |
+| **翻页动画** | 4 种可选：**仿真翻页**（书页绕书脊 3D 翻起，默认）、**平移**、**卷曲**、**无**；可在设置里实时切换 |
+| 其它翻页方式 | ① 左右悬浮按钮上下翻页；② 点击页面下方 1/4 区域翻页 |
 | 阅读体验 | EPUB 内嵌图片、PDF 矢量渲染、TXT 编码自适应（UTF-8/GBK/GB18030）、MOBI/RTF 文本抽取 |
 | 其它 | 阅读进度记忆、收藏、搜索、排序、封面尺寸调节 |
 | 免费书源 | 内置 **Gutendex** / **Open Library** / **Standard Ebooks** 三个公有领域书籍 API，可直接搜索并导入 |
@@ -95,6 +105,7 @@
 ### 3. 设置（永远在工具栏最下方）
 
 - **外观与取色**：10 套内置配色、莫奈取色开关、取色来源、自定义种子色、主题模式、圆角、减少动画。
+- **字体与翻页**：**阅读字体**（默认内置 JetBrains Maple Mono NF，含完整中日韩字形）、导入自定义字体（.ttf/.otf/.woff/.woff2，支持文件对话框或直接拖入）、字号、行距、翻页动画、拖动翻页开关与触发距离。
 - **AI 助手**：任意 OpenAI 兼容服务（**API URL / API Key** / 模型 / 温度 / 最大 Tokens / 系统提示词 / 归类提示词），支持一键测试与试聊。
 - **WebDAV 同步**：为后续多端同步打基础，可测试连接、立即同步设置与书库元数据。
 - **代理**：混合端口、默认内核、日志等级、绕过列表、嗅探、IPv6、自动重启。
@@ -115,6 +126,7 @@
 | 取色 | `@material/material-color-utilities`（HCT / Monet） |
 | 样式 | 原生 CSS 变量驱动的 MD3 设计令牌，无 UI 框架 |
 | 阅读 | **epub.js**（EPUB）、pdfjs-dist（PDF）、自研 FB2 / RTF / MOBI 解析 |
+| 字体 | 内置 JetBrains Maple Mono NF（woff2 中文子集，约 10MB / 5.2MB×2），经自定义 dola-font:// 协议按需流式加载 |
 | 打包 | electron-builder（portable exe，x64） |
 
 ## 开发

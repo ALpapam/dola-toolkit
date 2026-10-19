@@ -67,7 +67,14 @@ export const IPC = {
   syncStatus: 'sync:status',
   syncRun: 'sync:run',
   syncTest: 'sync:test',
-  syncChanged: 'sync:changed'
+  syncChanged: 'sync:changed',
+
+  // fonts (reader typography)
+  fontsList: 'fonts:list',
+  fontsImport: 'fonts:import',
+  fontsImportPaths: 'fonts:import-paths',
+  fontsRemove: 'fonts:remove',
+  fontsReveal: 'fonts:reveal'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

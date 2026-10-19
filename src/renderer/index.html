@@ -8,11 +8,14 @@
       * style-src / font-src / img-src must allow `blob:` — epub.js materialises
         every EPUB resource (stylesheets, fonts, illustrations) as a blob URL.
         Without `blob:` the chapter renders unstyled and illustrations are blocked.
+      * `dola-font:` is the custom scheme that streams bundled + user-imported
+        reader fonts from the main process; it must be allowed for both fonts and
+        fetch() (the reader warms the faces with document.fonts.load).
       * script-src stays strict ('self' only): book HTML never executes script.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: file: https:; style-src 'self' 'unsafe-inline' blob:; script-src 'self'; font-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* https: ws://localhost:*; frame-src 'self' blob: data:"
+      content="default-src 'self'; img-src 'self' data: blob: file: https: dola-font:; style-src 'self' 'unsafe-inline' blob:; script-src 'self'; font-src 'self' data: blob: dola-font:; connect-src 'self' dola-font: http://127.0.0.1:* https: ws://localhost:*; frame-src 'self' blob: data:"
     />
   </head>
   <body>

@@ -76,6 +76,13 @@ const api = {
     test: () => ipcRenderer.invoke(IPC.syncTest),
     onChanged: (cb: (s: unknown) => void) => on(IPC.syncChanged, cb)
   },
+  fonts: {
+    list: () => ipcRenderer.invoke(IPC.fontsList),
+    import: () => ipcRenderer.invoke(IPC.fontsImport),
+    importPaths: (paths: string[]) => ipcRenderer.invoke(IPC.fontsImportPaths, paths),
+    remove: (id: string) => ipcRenderer.invoke(IPC.fontsRemove, id),
+    reveal: () => ipcRenderer.invoke(IPC.fontsReveal)
+  },
   env: {
     platform: process.platform,
     versions: {

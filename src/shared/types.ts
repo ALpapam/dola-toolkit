@@ -67,6 +67,46 @@ export interface ProxySettings {
   autoRestart: boolean
 }
 
+/**
+ * Which page-turn interaction/effect the reader uses.
+ *   slide  — the page follows the finger horizontally and slides away
+ *   cover  — the sheet peels/rotates over the next page (Tencent/Fanqie style)
+ *   curl   — a soft paper-curl shadow sweep while the page follows the finger
+ *   none   — instant page swap
+ */
+export type FlipAnimation = 'slide' | 'cover' | 'curl' | 'none'
+
+export interface ReaderSettings {
+  /** custom font family applied to book text; 'system' = built-in reading stack */
+  fontFamily: string
+  /** base font size in px (prose, non-EPUB pages) */
+  fontSize: number
+  /** line height multiplier */
+  lineHeight: number
+  /** page-turn animation style */
+  flipAnimation: FlipAnimation
+  /** drag the left/right edge of a page sideways to turn it */
+  dragFlip: boolean
+  /** % of page width the drag must travel before the turn commits */
+  dragThreshold: number
+}
+
+export interface FontFace {
+  id: string
+  /** family name reported by the font file / user-facing label */
+  name: string
+  /** absolute path of the font file on disk */
+  path: string
+  /** ttf | otf | woff | woff2 */
+  format: 'ttf' | 'otf' | 'woff' | 'woff2' | 'ttc'
+  /** true when the file lives in the app's own fonts dir (can be deleted) */
+  managed: boolean
+  /** size in bytes */
+  size: number
+  /** the bundled default font shipped with the app */
+  builtin: boolean
+}
+
 export interface LibrarySettings {
   defaultView: 'grid' | 'list'
   /** auto = follow window aspect ratio */
@@ -94,6 +134,7 @@ export interface Settings {
   sync: WebDavSettings
   proxy: ProxySettings
   library: LibrarySettings
+  reader: ReaderSettings
   general: GeneralSettings
 }
 
@@ -474,5 +515,13 @@ export interface SettingsPatch {
   sync?: Partial<WebDavSettings>
   proxy?: Partial<ProxySettings>
   library?: Partial<LibrarySettings>
+  reader?: Partial<ReaderSettings>
   general?: Partial<GeneralSettings>
+}
+
+/** Fonts reported to the renderer. */
+export interface FontList {
+  fonts: FontFace[]
+  /** id of the bundled default family */
+  defaultId: string
 }

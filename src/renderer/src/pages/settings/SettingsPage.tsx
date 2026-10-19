@@ -8,11 +8,14 @@ import { toast } from '../../ui/toast'
 import { fmtDate } from '../../ui/format'
 import { APP_NAME, APP_NAME_CN, APP_VERSION_LABEL, GITHUB_REPO } from '@shared/version'
 import { THEME_PRESETS, presetById } from '@shared/presets'
+import { DEFAULT_READER_FONT_FAMILY, DEFAULT_READER_FONT_ID, SYSTEM_READING_STACK } from '@shared/fonts'
+import { installFontFaces, resolveReadingFamily } from '../library/fonts'
 
-type Section = 'appearance' | 'ai' | 'sync' | 'proxy' | 'library' | 'general' | 'about'
+type Section = 'appearance' | 'typography' | 'ai' | 'sync' | 'proxy' | 'library' | 'general' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'appearance', label: '外观与取色', icon: 'palette' },
+  { id: 'typography', label: '字体与翻页', icon: 'formatSize' },
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
   { id: 'proxy', label: '代理', icon: 'proxy' },
@@ -84,6 +87,7 @@ export function SettingsPage(): JSX.Element {
       <div className="settings-content">
         <div className="settings-content-inner">
           {section === 'appearance' && <AppearanceSection settings={settings} patch={patch} />}
+          {section === 'typography' && <TypographySection settings={settings} patch={patch} />}
           {section === 'ai' && <AiSection settings={settings} patch={patch} />}
           {section === 'sync' && <SyncSection settings={settings} patch={patch} />}
           {section === 'proxy' && <ProxySection settings={settings} patch={patch} />}
@@ -286,6 +290,291 @@ function AppearanceSection({ settings, patch }: { settings: Settings; patch: (p:
       </div>
     </>
   )
+}
+
+/* ================================================================== */
+/* Typography & page turn                                              */
+/* ================================================================== */
+function TypographySection({
+  settings,
+  patch
+}: {
+  settings: Settings
+  patch: (p: SettingsPatch) => Promise<void>
+}): JSX.Element {
+  const rd = settings.reader
+  const fonts = useApp((s) => s.fonts)
+  const setFonts = useApp((s) => s.setFonts)
+  const setReadingFamily = useApp((s) => s.setReadingFamily)
+  const [busy, setBusy] = useState(false)
+  const [over, setOver] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [fontsDir, setFontsDir] = useState('')
+
+  const refresh = async (): Promise<void> => {
+    const list = await window.api.fonts.list()
+    setFonts(list.fonts)
+    setFontsDir(list.dir)
+    installFontFaces(list.fonts)
+    setReadingFamily(resolveReadingFamily(settings.reader.fontFamily, list.fonts))
+  }
+
+  useEffect(() => {
+    void refresh().catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // keep the resolved family in sync when the selection changes
+  useEffect(() => {
+    setReadingFamily(resolveReadingFamily(rd.fontFamily, fonts))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rd.fontFamily, fonts])
+
+  const choose = async (id: string): Promise<void> => {
+    await patch({ reader: { fontFamily: id } })
+    setReadingFamily(resolveReadingFamily(id, fonts))
+  }
+
+  const importFromDialog = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const res = await window.api.fonts.import()
+      if (res.imported.length) {
+        toast.success(`已导入 ${res.imported.length} 个字体`)
+        await refresh()
+        await choose(res.imported[0].id)
+      } else if (res.skipped.length) {
+        toast.error(res.skipped[0].reason)
+      }
+    } catch (e) {
+      toast.error(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importPaths = async (paths: string[]): Promise<void> => {
+    if (!paths.length) return
+    setBusy(true)
+    try {
+      const res = await window.api.fonts.importPaths(paths)
+      if (res.imported.length) {
+        toast.success(`已导入 ${res.imported.length} 个字体`)
+        await refresh()
+        await choose(res.imported[0].id)
+      } else if (res.skipped.length) {
+        toast.error(res.skipped[0].reason)
+      }
+    } catch (e) {
+      toast.error(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string): Promise<void> => {
+    setRemoving(id)
+    try {
+      const res = await window.api.fonts.remove(id)
+      if (!res.ok) {
+        toast.error(res.reason ?? '删除失败')
+        return
+      }
+      toast.success('已删除字体')
+      await refresh()
+      if (rd.fontFamily === id) await choose(DEFAULT_READER_FONT_ID)
+    } finally {
+      setRemoving(null)
+    }
+  }
+
+  const previewSampler = fonts.find((f) => f.id === rd.fontFamily)
+  const previewFamily = previewSampler
+    ? `'${previewSampler.builtin ? DEFAULT_READER_FONT_FAMILY : previewSampler.name}', serif`
+    : SYSTEM_READING_STACK
+
+  return (
+    <>
+      <h2 className="set-section-title">
+        <Icon name="formatSize" size={20} /> 字体与翻页
+      </h2>
+      <p className="set-section-desc">
+        为书库阅读器选择字体，并设置翻页动画与拖动翻页手势。默认字体为内置的 JetBrains Maple Mono NF。
+      </p>
+
+      <div className="set-card">
+        <div className="preset-head">
+          <div>
+            <div className="set-row-title">阅读字体</div>
+            <div className="set-row-desc">点击即可应用，右侧为实际字形的预览</div>
+          </div>
+          <div className="hstack" style={{ gap: 6 }}>
+            <Button variant="tonal" icon="upload" onClick={() => void importFromDialog()} disabled={busy}>
+              {busy ? '导入中…' : '导入字体'}
+            </Button>
+            <IconButton
+              icon="folder"
+              label="打开字体目录"
+              onClick={() => void window.api.fonts.reveal()}
+            />
+          </div>
+        </div>
+
+        <div style={{ padding: '0 20px 12px' }}>
+          <div className="font-list">
+            {fonts.length === 0 ? (
+              <div className="tiny muted" style={{ padding: 10 }}>
+                正在读取字体…
+              </div>
+            ) : null}
+            {fonts.map((f) => {
+              const active = f.id === rd.fontFamily
+              const family = f.builtin ? DEFAULT_READER_FONT_FAMILY : f.name
+              return (
+                <button
+                  key={f.id}
+                  className={`font-row ${active ? 'active' : ''}`}
+                  onClick={() => void choose(f.id)}
+                  aria-pressed={active}
+                >
+                  <span className="font-preview" style={{ fontFamily: `'${family}', serif` }}>
+                    永 Aa
+                  </span>
+                  <span className="font-meta">
+                    <span className="font-name">
+                      {f.name}
+                      {f.builtin ? (
+                        <span className="badge" style={{ marginLeft: 6, height: 18, fontSize: 10 }}>
+                          内置
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="font-sub">
+                      {f.format.toUpperCase()} · {fmtSize(f.size ?? 0)}
+                      {f.builtin ? ' · 含中日韩字形' : ''}
+                    </span>
+                  </span>
+                  <span className="font-actions">
+                    {active ? <Icon name="check" size={16} /> : null}
+                    {f.managed ? (
+                      <IconButton
+                        icon="delete"
+                        small
+                        label="删除"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void remove(f.id)
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div
+            className={`font-drop ${over ? 'over' : ''}`}
+            style={{ marginTop: 10 }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setOver(true)
+            }}
+            onDragLeave={() => setOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setOver(false)
+              const paths: string[] = []
+              for (const file of Array.from(e.dataTransfer.files)) {
+                const p = (file as File & { path?: string }).path
+                if (p) paths.push(p)
+              }
+              void importPaths(paths)
+            }}
+          >
+            把 .ttf / .otf / .woff2 字体文件拖到这里（或点右上角「导入字体」）
+            {fontsDir ? <span className="tiny muted"> · {fontsDir}</span> : null}
+          </div>
+
+          <div className="font-sample" style={{ fontFamily: previewFamily }}>
+            春江潮水连海平，海上明月共潮生。
+            <br />
+            潋滟随波千万里，何处春江无月明。
+            <br />
+            这是一段用于预览当前字体的正文，包含标点、数字 1234567890 与英文。
+            <span className="latin" style={{ fontFamily: previewFamily }}>
+              The quick brown fox jumps over the lazy dog. 0123456789 {'{}[]()<>'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="set-card">
+        <SettingRow title="字号" desc={`${rd.fontSize}px · 正文文字大小`}>
+          <div style={{ width: 190 }}>
+            <Slider
+              value={rd.fontSize}
+              min={13}
+              max={28}
+              onChange={(v) => void patch({ reader: { fontSize: v } })}
+            />
+          </div>
+        </SettingRow>
+        <SettingRow title="行距" desc={`${rd.lineHeight.toFixed(2)} 倍行高`}>
+          <div style={{ width: 190 }}>
+            <Slider
+              value={rd.lineHeight}
+              min={1.3}
+              max={2.4}
+              step={0.05}
+              onChange={(v) => void patch({ reader: { lineHeight: v } })}
+            />
+          </div>
+        </SettingRow>
+        <SettingRow title="翻页动画" desc="拖动页面时使用的过渡效果">
+          <Segmented
+            value={rd.flipAnimation}
+            onChange={(v) => void patch({ reader: { flipAnimation: v as typeof rd.flipAnimation } })}
+            options={[
+              { value: 'cover', label: '仿真翻页' },
+              { value: 'slide', label: '平移' },
+              { value: 'curl', label: '卷曲' },
+              { value: 'none', label: '无' }
+            ]}
+          />
+        </SettingRow>
+        <SettingRow title="拖动翻页" desc="按住页面左/右四分之一处左右拖动即可翻页">
+          <Switch checked={rd.dragFlip} onChange={(v) => void patch({ reader: { dragFlip: v } })} />
+        </SettingRow>
+        <SettingRow title="翻页触发距离" desc={`拖过页面宽度的 ${rd.dragThreshold}% 即翻页`}>
+          <div style={{ width: 190 }}>
+            <Slider
+              value={rd.dragThreshold}
+              min={10}
+              max={50}
+              onChange={(v) => void patch({ reader: { dragThreshold: v } })}
+            />
+          </div>
+        </SettingRow>
+        <SettingRow title="打开字体目录" desc="也可以把字体文件直接放进这个目录">
+          <Button variant="outlined" icon="folder" onClick={() => void window.api.fonts.reveal()}>
+            打开目录
+          </Button>
+        </SettingRow>
+      </div>
+
+      <p className="tiny muted">
+        提示：内置字体已做中文子集化（约 5MB），不影响排版；自定义字体请优先使用 .ttf / .woff2，
+        删除字体不会影响已导入的书籍。{removing ? ' · 处理中…' : ''}
+      </p>
+    </>
+  )
+}
+
+function fmtSize(bytes: number): string {
+  if (!bytes) return '—'
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 /* ================================================================== */

@@ -28,6 +28,17 @@ export const BUILTIN_TOOLS: ToolDef[] = [
   }
 ]
 
+export interface LoadedFontInfo {
+  id: string
+  name: string
+  builtin: boolean
+  format: string
+  url?: string | null
+  size?: number
+  path?: string
+  managed?: boolean
+}
+
 interface AppState {
   page: PageId
   settings: Settings | null
@@ -35,11 +46,17 @@ interface AppState {
   /** order of tool ids in the rail; the settings entry is pinned last */
   railOrder: string[]
   ready: boolean
+  /** every font family the reader can use (bundled + imported) */
+  fonts: LoadedFontInfo[]
+  /** CSS font-family value the reader applies to book text */
+  readingFamily: string
   setPage: (p: PageId) => void
   setSettings: (s: Settings) => void
   setRailExpanded: (v: boolean) => void
   setRailOrder: (o: string[]) => void
   setReady: (v: boolean) => void
+  setFonts: (fonts: LoadedFontInfo[]) => void
+  setReadingFamily: (family: string) => void
 }
 
 const readOrder = (): string[] => {
@@ -73,6 +90,8 @@ export const useApp = create<AppState>((set) => ({
   railExpanded: readExpanded(),
   railOrder: readOrder(),
   ready: false,
+  fonts: [],
+  readingFamily: 'serif',
   setPage: (page) => set({ page }),
   setSettings: (settings) => set({ settings }),
   setRailExpanded: (railExpanded) => {
@@ -91,5 +110,7 @@ export const useApp = create<AppState>((set) => ({
     }
     set({ railOrder })
   },
-  setReady: (ready) => set({ ready })
+  setReady: (ready) => set({ ready }),
+  setFonts: (fonts) => set({ fonts }),
+  setReadingFamily: (readingFamily) => set({ readingFamily })
 }))

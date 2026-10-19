@@ -298,10 +298,11 @@ export function Segmented<T extends string>({
 }: {
   value: T
   onChange: (v: T) => void
-  options: { value: T; icon: IconName | string; label?: string }[]
+  options: { value: T; icon?: IconName | string; label?: string }[]
 }): JSX.Element {
+  const textOnly = options.some((o) => !o.icon)
   return (
-    <div className="icon-seg">
+    <div className={`icon-seg ${textOnly ? 'has-text' : ''}`}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -310,7 +311,7 @@ export function Segmented<T extends string>({
           title={o.label}
           onClick={() => onChange(o.value)}
         >
-          <Icon name={o.icon} size={18} />
+          {o.icon ? <Icon name={o.icon} size={18} /> : <span className="seg-text">{o.label}</span>}
         </button>
       ))}
     </div>

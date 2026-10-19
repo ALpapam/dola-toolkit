@@ -97,7 +97,7 @@ function sanitizePatch(raw: unknown): SettingsPatch {
   const out: SettingsPatch = {}
   if (typeof raw !== 'object' || raw === null) return out
   const src = raw as Record<string, unknown>
-  const sections = ['appearance', 'ai', 'sync', 'proxy', 'library', 'general'] as const
+  const sections = ['appearance', 'ai', 'sync', 'proxy', 'library', 'reader', 'general'] as const
   for (const section of sections) {
     const value = src[section]
     if (typeof value !== 'object' || value === null || Array.isArray(value)) continue

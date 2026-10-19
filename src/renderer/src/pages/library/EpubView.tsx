@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../ui/Icon'
 import { Spinner } from '../../ui/controls'
+import { useApp } from '../../state/app'
+import { epubFontCss } from './fonts'
 import {
   configureRendition,
   openEpubFromBase64,
@@ -54,6 +56,7 @@ export function EpubView({
   spread,
   theme,
   fontSize,
+  fontFamily,
   startLocation,
   onLocation,
   onReady,
@@ -63,6 +66,8 @@ export function EpubView({
   spread: 'none' | 'auto' | 'both'
   theme: 'light' | 'dark'
   fontSize: number
+  /** selected reader font id; resolved to a CSS family + injected @font-face */
+  fontFamily: string
   startLocation: string | null
   onLocation: (pct: number, cfi: string) => void
   onReady: (handle: EpubViewHandle) => void
@@ -78,6 +83,11 @@ export function EpubView({
   const [scrolledFallback, setScrolledFallback] = useState(false)
   const recoveredRef = useRef(false)
   const locationRef = useRef<string | null>(startLocation)
+  // refs so the content hook (registered once) always sees current typography
+  const fontFamilyRef = useRef(fontFamily)
+  const fontSizeRef = useRef(fontSize)
+  fontFamilyRef.current = fontFamily
+  fontSizeRef.current = fontSize
 
   /* ---- create the book + rendition ---- */
   useEffect(() => {
@@ -120,6 +130,24 @@ export function EpubView({
         rendition.hooks.content.register((contents: unknown) => {
           const doc = (contents as { document?: Document }).document
           if (!doc) return
+
+          // epub.js renders each chapter in its own document: inject the selected
+          // reader font (and its @font-face rules) so EPUB matches prose pages.
+          try {
+            const store = useApp.getState()
+            const css = epubFontCss(fontFamilyRef.current, store.fonts, fontSizeRef.current)
+            const styleId = 'dola-epub-font'
+            let el = doc.getElementById(styleId) as HTMLStyleElement | null
+            if (!el) {
+              el = doc.createElement('style')
+              el.id = styleId
+              ;(doc.head ?? doc.documentElement).appendChild(el)
+            }
+            if (el.textContent !== css) el.textContent = css
+          } catch {
+            /* typography is cosmetic */
+          }
+
           const imgs = Array.from(doc.querySelectorAll('img'))
           let broken = 0
           for (const img of imgs) {

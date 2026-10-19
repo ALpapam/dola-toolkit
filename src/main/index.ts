@@ -4,7 +4,7 @@
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, Notification, nativeTheme } from 'electron'
+import { app, BrowserWindow, Notification, nativeTheme, protocol } from 'electron'
 import { IPC } from '@shared/channels'
 import { initStore, getLogsDir, getSettings, onSettingsChange } from './store'
 import { createMainWindow, getMainWindow, broadcast, showMainWindow } from './window'
@@ -59,7 +59,23 @@ process.on('warning', (warn) => {
 // App identity / single instance
 // ---------------------------------------------------------------------------
 
-app.setAppUserModelId('io.dola.app')
+// The reader loads bundled + user-imported fonts from a custom scheme. It must
+// be declared privileged *before* the app becomes ready, otherwise Chromium
+// refuses to use it as a font source.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'dola-font',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  }
+])
+
+app.setAppUserModelId('io.dola.toolkit')
 app.setName('Dola Toolkit')
 
 const gotLock = app.requestSingleInstanceLock()
@@ -107,6 +123,13 @@ function bootstrap(): void {
         })
         contents.on('will-attach-webview', (event) => event.preventDefault())
       })
+
+      try {
+        const { registerFontProtocol } = await import('./fonts')
+        registerFontProtocol()
+      } catch (e) {
+        writeCrashLog('registerFontProtocol', e)
+      }
 
       registerAllIpc()
 

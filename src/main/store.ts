@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { CoreId, DeepPartial, ProxyNode, Settings, SettingsPatch } from '@shared/types'
 import { DEFAULT_PRESET, presetById } from '@shared/presets'
+import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -83,6 +84,14 @@ export const DEFAULT_SETTINGS: Settings = {
     importMode: 'managed',
     defaultSort: 'added',
     coverWidth: 170
+  },
+  reader: {
+    fontFamily: DEFAULT_READER_FONT_ID,
+    fontSize: 17,
+    lineHeight: 1.9,
+    flipAnimation: 'cover',
+    dragFlip: true,
+    dragThreshold: 26
   },
   general: {
     language: 'zh',
@@ -334,6 +343,14 @@ function normalizeSettings(): void {
   if (lib.importMode !== 'managed' && lib.importMode !== 'reference') lib.importMode = 'managed'
   if (!['added', 'title', 'author', 'recent'].includes(lib.defaultSort)) lib.defaultSort = 'added'
   lib.coverWidth = Math.round(clampNum(lib.coverWidth, 80, 400, 170))
+
+  const rd = settings.reader
+  if (typeof rd.fontFamily !== 'string' || !rd.fontFamily) rd.fontFamily = DEFAULT_READER_FONT_ID
+  rd.fontSize = Math.round(clampNum(rd.fontSize, 12, 32, 17))
+  rd.lineHeight = clampNum(rd.lineHeight, 1.2, 2.6, 1.9)
+  if (!['slide', 'cover', 'curl', 'none'].includes(rd.flipAnimation)) rd.flipAnimation = 'cover'
+  if (typeof rd.dragFlip !== 'boolean') rd.dragFlip = true
+  rd.dragThreshold = Math.round(clampNum(rd.dragThreshold, 8, 60, 26))
 
   const s = settings.sync
   if (typeof s.enabled !== 'boolean') s.enabled = false

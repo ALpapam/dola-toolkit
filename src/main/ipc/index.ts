@@ -16,6 +16,7 @@ import { registerProxyIpc } from './proxy'
 import { registerLibraryIpc } from './library'
 import { registerAiIpc } from './ai'
 import { registerSyncIpc } from './sync'
+import { registerFontsIpc } from './fonts'
 
 type Registrar = () => void
 
@@ -45,4 +46,6 @@ export function registerAllIpc(): void {
   safe('library', registerLibraryIpc)
   safe('ai', registerAiIpc)
   safe('sync', registerSyncIpc)
+  // reader typography — user-imported + bundled font families
+  safe('fonts', registerFontsIpc)
 }

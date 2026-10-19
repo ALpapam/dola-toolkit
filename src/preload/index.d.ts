@@ -11,6 +11,7 @@ import type {
   CoreLogEvent,
   CoreStatus,
   EngineCapability,
+  FontFace,
   FolderRecord,
   ImportLinksResult,
   ImportOutcome,
@@ -92,6 +93,13 @@ export interface DolaToolkitApi {
     run(): Promise<SyncStatus>
     test(): Promise<{ ok: boolean; message: string }>
     onChanged(cb: (s: SyncStatus) => void): () => void
+  }
+  fonts: {
+    list(): Promise<{ fonts: FontFace[]; defaultId: string; dir: string }>
+    import(): Promise<{ imported: FontFace[]; skipped: { path: string; reason: string }[] }>
+    importPaths(paths: string[]): Promise<{ imported: FontFace[]; skipped: { path: string; reason: string }[] }>
+    remove(id: string): Promise<{ ok: boolean; reason?: string }>
+    reveal(): Promise<string>
   }
   env: {
     platform: string

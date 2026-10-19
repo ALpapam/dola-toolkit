@@ -14,6 +14,12 @@ asar: true
 # on every launch, which would slow startup. They are shipped next to the exe
 # instead (scripts/copy-cores.mjs); the app also falls back to
 # D:\桌面\server\tool, so an existing install keeps working.
+# Bundled reader font (~10 MB woff2 subset) — loaded through the dola-font scheme.
+extraResources:
+  - from: resources/fonts
+    to: fonts
+    filter:
+      - '**/*'
 win:
   icon: build/icon.ico
   target:
