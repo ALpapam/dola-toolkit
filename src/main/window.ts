@@ -81,7 +81,12 @@ export function createMainWindow(settings?: Settings): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
-      webSecurity: true
+      webSecurity: true,
+      // Chromium throttles timers/rAF for backgrounded or minimized windows.
+      // epub.js renders chapters through a requestAnimationFrame-driven queue,
+      // so throttling makes "open book" hang forever whenever the window is not
+      // focused — the reader must keep working while the user is elsewhere.
+      backgroundThrottling: false
     }
   })
 

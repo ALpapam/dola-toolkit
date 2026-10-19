@@ -149,6 +149,17 @@ img {
   white-space: nowrap;
   -webkit-app-region: drag;
 }
+/* Collapsed brand must be exactly as wide as the rail's content box so the
+   logo ends up centred with equal left/right margins; the title is removed
+   from layout entirely (not just faded) or it would steal width and push the
+   logo left. */
+.rail:not(.expanded) .rail-brand {
+  width: 100%;
+  padding: 0;
+}
+.rail:not(.expanded) .rail-brand-title {
+  display: none;
+}
 .rail.expanded .rail-brand {
   justify-content: flex-start;
   padding: 0 var(--sp-2);

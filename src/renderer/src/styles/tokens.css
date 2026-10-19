@@ -89,7 +89,7 @@
   --dur-5: 420ms;
 
   /* layout */
-  --rail-w: 76px;
+  --rail-w: 67.5px;
   --rail-w-expanded: 236px;
   /* collapsed rail: inner square that holds one icon */
   --rail-item-size: 52px;

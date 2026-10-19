@@ -123,11 +123,10 @@ export function useDragFlip({
         setDragging(false)
         return
       }
+      // The consumer owns the turn itself: it must be free to run the
+      // completion animation *first* and only then advance the page. Calling
+      // onNext/onPrev here as well would turn two pages per gesture.
       cbRef.current.onRelease(committed, s.dir)
-      if (committed) {
-        if (s.dir === 'next') cbRef.current.onNext()
-        else cbRef.current.onPrev()
-      }
       setDragging(false)
     },
     [detach]
@@ -256,6 +255,11 @@ export function useDragFlip({
       // Text selection wins over the gesture.
       const sel = window.getSelection()
       if (sel && !sel.isCollapsed) return
+
+      // Suppress the browser's drag-to-select while the sheet is being pulled:
+      // otherwise the gesture both turns the page AND paints a text selection.
+      e.preventDefault()
+      window.getSelection()?.removeAllRanges()
 
       beginGesture(e.clientX, e.clientY, pageWidth, x >= rect.width * 0.5 ? 'next' : 'prev')
     },
@@ -486,11 +490,8 @@ export function useEpubGestureBridge(opts: {
       const committed = s.progress >= threshold / 100 || Math.abs(detail.v) > FLICK_VELOCITY
       const dir = s.dir
       epubState.current = null
+      // the consumer runs the completion animation and then advances the page
       cb.current.onRelease(committed, dir)
-      if (committed) {
-        if (dir === 'next') cb.current.onNext()
-        else cb.current.onPrev()
-      }
     }
 
     window.addEventListener('dola-epub-gesture', onGesture as EventListener)

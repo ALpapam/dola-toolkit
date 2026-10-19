@@ -94,12 +94,14 @@ export function EpubView({
   useEffect(() => {
     let cancelled = false
     const host = hostRef.current
+
     if (!host) return
     setLoading(true)
 
     void (async () => {
       try {
         const book = await withTimeout(openEpubFromBase64(base64), OPEN_TIMEOUT_MS, '解析 EPUB 超时')
+
         if (cancelled) {
           book.destroy()
           return
@@ -110,6 +112,7 @@ export function EpubView({
         const box = host.getBoundingClientRect()
         const viewW = Math.max(320, Math.floor(box.width || stageRect?.width || 900))
         const viewH = Math.max(320, Math.floor(box.height || stageRect?.height || 700))
+
         const rendition = book.renderTo(host, {
           width: viewW,
           height: viewH,
@@ -243,6 +246,7 @@ export function EpubView({
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)
+
         // A book whose spine epub.js cannot paginate (some Kindle/duokan
         // conversions) should still be readable. Retry once in scrolled flow,
         // which skips the paginator that is hanging.

@@ -5,6 +5,7 @@ node_modules/
 out/
 dist/
 dist-portable/
+dist-noasar/
 
 # 本地缓存与测试产物
 .tmp/

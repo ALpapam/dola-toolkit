@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { BookRecord, LibrarySettings } from '@shared/types'
+import type { BookRecord, FlipAnimation, LibrarySettings } from '@shared/types'
 import { useApp } from '../../state/app'
 import { Icon } from '../../ui/Icon'
 import { IconButton, Slider, Spinner } from '../../ui/controls'
@@ -189,6 +189,14 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   }, [geo.w, geo.h, twoUp])
 
   /* ---------------- paginate prose ---------------- */
+  // Which book has had its saved position restored. Re-pagination must NOT
+  // clobber the current page: a resize / font change / spread toggle re-runs
+  // this effect, and restoring `lastLocation` there would teleport the reader
+  // (and visibly undo a fresh page turn).
+  const restoredForRef = useRef<string | null>(null)
+  const indexRef = useRef(0)
+  indexRef.current = index
+
   useLayoutEffect(() => {
     if (!source || source.kind !== 'blocks') return
     if (pageBox.w < 100 || pageBox.h < 120) return
@@ -202,9 +210,18 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       fontFamily: readingFamily
     })
     setProsePages(pages)
-    const saved = Number(bookRef.current.lastLocation ?? 0) || 0
-    const aligned = twoUp ? saved - (saved % 2) : saved
-    setIndex(Math.min(Math.max(0, aligned), Math.max(0, pages.length - 1)))
+    const maxIndex = Math.max(0, pages.length - 1)
+
+    if (restoredForRef.current !== book.id) {
+      // first pagination for this book: honour the saved position
+      restoredForRef.current = book.id
+      const saved = Number(bookRef.current.lastLocation ?? 0) || 0
+      const aligned = twoUp ? saved - (saved % 2) : saved
+      setIndex(Math.min(Math.max(0, aligned), maxIndex))
+      return
+    }
+    // already reading this book: keep the current position, just re-clamp it
+    setIndex(Math.min(Math.max(0, indexRef.current), maxIndex))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, pageBox.w, pageBox.h, twoUp, book.id, readingFamily, FONT_SIZE, LINE_HEIGHT])
 
@@ -351,10 +368,12 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       if (!el) return
       const width = engaged ? el.getBoundingClientRect().width : pageBoxRef.current.w
       const style = pageTurnStyle({ progress, dir, dragging: engaged, mode: flipModeRef.current }, width)
-      if (!engaged && progress === 0) {
-        el.style.transition = 'transform 380ms cubic-bezier(.2,0,0,1), box-shadow 380ms linear'
-      } else if (engaged) {
+      if (engaged) {
+        // tracking the pointer: no interpolation lag
         el.style.transition = 'none'
+      } else if (progress === 0) {
+        // returning to rest after a cancelled gesture
+        el.style.transition = 'transform 380ms cubic-bezier(.2,0,0,1), box-shadow 380ms linear'
       }
       el.style.transform = style.transform ?? ''
       el.style.transformOrigin = (style.transformOrigin as string) ?? ''
@@ -363,6 +382,29 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     },
     []
   )
+
+  /**
+   * Runs the *completion* half of a page turn: instead of snapping the sheet
+   * back to rest and swapping the text underneath (which reads as "no
+   * animation"), finish rotating it all the way out, then render the new page
+   * at rest. This is what makes a committed drag feel like a real page turn.
+   */
+  const completeTurn = useCallback((dir: 'next' | 'prev', mode: FlipAnimation) => {
+    const el = turnableRef.current
+    if (!el || mode === 'none') return Promise.resolve()
+
+    const w = pageBoxRef.current.w
+    const finished = pageTurnStyle({ progress: 1, dir, dragging: false, mode }, w)
+    const duration = mode === 'cover' ? 300 : 260
+
+    return new Promise<void>((resolve) => {
+      el.style.transition = `transform ${duration}ms cubic-bezier(.3,0,.2,1), box-shadow ${duration}ms linear`
+      el.style.transform = finished.transform ?? ''
+      el.style.boxShadow = (finished.boxShadow as string) ?? ''
+      el.style.transformOrigin = (finished.transformOrigin as string) ?? ''
+      window.setTimeout(resolve, duration)
+    })
+  }, [])
 
   const { onPointerDown } = useDragFlip({
     enabled: dragEnabled,
@@ -378,15 +420,28 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       paintTurn(progress, dir, engaged)
     },
     onRelease: (committed) => {
-      dragState.current = { progress: 0, dir: dragState.current.dir, engaged: false }
-      // animate back to rest, then drop the gesture state
-      paintTurn(0, dragState.current.dir, false)
+      const dir = dragState.current.dir
+      dragState.current = { progress: 0, dir, engaged: false }
       setSettling(true)
-      window.setTimeout(() => {
-        setSettling(false)
-        setDrag({ progress: 0, dir: 'next', engaged: false })
-        paintTurn(0, 'next', false)
-      }, committed ? 60 : 380)
+      if (committed) {
+        // finish the rotation, THEN advance the content — otherwise the page
+        // snaps back to rest and the turn is invisible
+        void completeTurn(dir, flipModeRef.current).then(() => {
+          if (dir === 'next') goNext()
+          else goPrev()
+          setSettling(false)
+          setDrag({ progress: 0, dir: 'next', engaged: false })
+          paintTurn(0, 'next', false)
+        })
+      } else {
+        // under the threshold: spring back
+        paintTurn(0, dir, false)
+        window.setTimeout(() => {
+          setSettling(false)
+          setDrag({ progress: 0, dir: 'next', engaged: false })
+          paintTurn(0, 'next', false)
+        }, 380)
+      }
     }
   })
 
@@ -402,14 +457,46 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       if (!drag.engaged && engaged) setDrag({ progress, dir, engaged })
     },
     onRelease: (committed, dir) => {
-      if (!committed) {
-        setSettling(true)
+      setSettling(true)
+      if (committed) {
+        // animate the chapter out, then let epub.js advance to the next page
+        const el = document.querySelector('.epub-host') as HTMLElement | null
+        const mode = flipModeRef.current
+        const run = (): void => {
+          if (dir === 'next') goNext()
+          else goPrev()
+          setSettling(false)
+          setDrag({ progress: 0, dir: 'next', engaged: false })
+          if (el) {
+            el.style.transition = ''
+            el.style.transform = ''
+            el.style.boxShadow = ''
+          }
+        }
+        if (el && mode !== 'none') {
+          const w = el.getBoundingClientRect().width
+          const style = pageTurnStyle({ progress: 1, dir, dragging: false, mode }, w)
+          el.style.transition = 'transform 300ms cubic-bezier(.3,0,.2,1), box-shadow 300ms linear'
+          el.style.transform = style.transform ?? ''
+          el.style.boxShadow = (style.boxShadow as string) ?? ''
+          el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+          window.setTimeout(run, 300)
+        } else {
+          run()
+        }
+      } else {
+        // under the threshold: spring back
+        const el = document.querySelector('.epub-host') as HTMLElement | null
+        if (el) {
+          el.style.transition = 'transform 280ms cubic-bezier(.2,0,0,1)'
+          el.style.transform = ''
+          el.style.boxShadow = ''
+        }
         window.setTimeout(() => {
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
-        }, 260)
-      } else {
-        setDrag({ progress: 0, dir, engaged: false })
+          if (el) el.style.transition = ''
+        }, 290)
       }
     }
   })
@@ -539,7 +626,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
 
             <div
               className={`reader-spread current ${drag.engaged ? 'is-dragging' : ''}`}
-              key={`${index}-${twoUp ? 'd' : 's'}`}
               style={{
                 ['--turn-dir' as string]: turnDir === 'next' ? '18px' : '-18px',
                 ['--reading-font' as string]: readingFamily
