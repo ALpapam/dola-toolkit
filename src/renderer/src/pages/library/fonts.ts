@@ -119,4 +119,24 @@ export function epubFontCss(familyId: string, fonts: LoadedFont[], fontSize: num
   ].join('\n')
 }
 
+/**
+ * Applies the selected family to the WHOLE application, not just books.
+ *
+ * The design tokens build `--font-ui` / `--font-display` / `--font-mono` /
+ * `--font-reading` on top of `--app-font`, so setting that one variable
+ * restyles the rail, title bar, settings, dialogs and the reader at once.
+ * The system-font option clears it so the native stacks take over again.
+ */
+export function applyAppFont(familyId: string, fonts: LoadedFont[]): void {
+  const root = document.documentElement
+  if (!familyId || familyId === SYSTEM_FONT_ID) {
+    root.style.setProperty('--app-font', '')
+    return
+  }
+  const font = fonts.find((f) => f.id === familyId)
+  const family = font ? (font.builtin ? DEFAULT_READER_FONT_FAMILY : font.name) : ''
+  // quoted family with a trailing comma so it composes with the fallback stacks
+  root.style.setProperty('--app-font', family ? `${cssFamily(family)},` : '')
+}
+
 export { DEFAULT_READER_FONT_ID, SYSTEM_FONT_ID }

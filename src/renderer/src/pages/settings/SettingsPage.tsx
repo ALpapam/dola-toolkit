@@ -9,13 +9,12 @@ import { fmtDate } from '../../ui/format'
 import { APP_NAME, APP_NAME_CN, APP_VERSION_LABEL, GITHUB_REPO } from '@shared/version'
 import { THEME_PRESETS, presetById } from '@shared/presets'
 import { DEFAULT_READER_FONT_FAMILY, DEFAULT_READER_FONT_ID, SYSTEM_READING_STACK } from '@shared/fonts'
-import { installFontFaces, resolveReadingFamily } from '../library/fonts'
+import { applyAppFont, installFontFaces, resolveReadingFamily } from '../library/fonts'
 
-type Section = 'appearance' | 'typography' | 'ai' | 'sync' | 'proxy' | 'library' | 'general' | 'about'
+type Section = 'appearance' | 'ai' | 'sync' | 'proxy' | 'library' | 'general' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'appearance', label: '外观与取色', icon: 'palette' },
-  { id: 'typography', label: '字体与翻页', icon: 'formatSize' },
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
   { id: 'proxy', label: '代理', icon: 'proxy' },
@@ -87,7 +86,6 @@ export function SettingsPage(): JSX.Element {
       <div className="settings-content">
         <div className="settings-content-inner">
           {section === 'appearance' && <AppearanceSection settings={settings} patch={patch} />}
-          {section === 'typography' && <TypographySection settings={settings} patch={patch} />}
           {section === 'ai' && <AiSection settings={settings} patch={patch} />}
           {section === 'sync' && <SyncSection settings={settings} patch={patch} />}
           {section === 'proxy' && <ProxySection settings={settings} patch={patch} />}
@@ -288,14 +286,17 @@ function AppearanceSection({ settings, patch }: { settings: Settings; patch: (p:
           </div>
         )}
       </div>
+
+      {/* font selection lives here: it is part of the app's look */}
+      <FontSection settings={settings} patch={patch} />
     </>
   )
 }
 
 /* ================================================================== */
-/* Typography & page turn                                              */
+/* Fonts (shown inside 外观与取色)                                      */
 /* ================================================================== */
-function TypographySection({
+function FontSection({
   settings,
   patch
 }: {
@@ -317,6 +318,7 @@ function TypographySection({
     setFontsDir(list.dir)
     installFontFaces(list.fonts)
     setReadingFamily(resolveReadingFamily(settings.reader.fontFamily, list.fonts))
+    applyAppFont(settings.reader.fontFamily, list.fonts)
   }
 
   useEffect(() => {
@@ -333,6 +335,7 @@ function TypographySection({
   const choose = async (id: string): Promise<void> => {
     await patch({ reader: { fontFamily: id } })
     setReadingFamily(resolveReadingFamily(id, fonts))
+    applyAppFont(id, fonts)
   }
 
   const importFromDialog = async (): Promise<void> => {
@@ -395,18 +398,18 @@ function TypographySection({
 
   return (
     <>
-      <h2 className="set-section-title">
-        <Icon name="formatSize" size={20} /> 字体与翻页
-      </h2>
+      <h3 className="set-section-title" style={{ fontSize: 14 }}>
+        <Icon name="formatSize" size={18} /> 字体
+      </h3>
       <p className="set-section-desc">
-        为书库阅读器选择字体，并设置翻页动画与拖动翻页手势。默认字体为内置的 JetBrains Maple Mono NF。
+        字体对<strong>整个软件</strong>生效（界面、书库与阅读器）。默认字体为内置的 JetBrains Maple Mono NF。
       </p>
 
       <div className="set-card">
         <div className="preset-head">
           <div>
-            <div className="set-row-title">阅读字体</div>
-            <div className="set-row-desc">点击即可应用，右侧为实际字形的预览</div>
+            <div className="set-row-title">字体</div>
+            <div className="set-row-desc">点击即可全局应用，右侧为实际字形的预览</div>
           </div>
           <div className="hstack" style={{ gap: 6 }}>
             <Button variant="tonal" icon="upload" onClick={() => void importFromDialog()} disabled={busy}>
@@ -510,7 +513,7 @@ function TypographySection({
       </div>
 
       <div className="set-card">
-        <SettingRow title="字号" desc={`${rd.fontSize}px · 正文文字大小`}>
+        <SettingRow title="字号" desc={`${rd.fontSize}px · 阅读器正文文字大小`}>
           <div style={{ width: 190 }}>
             <Slider
               value={rd.fontSize}
@@ -531,6 +534,41 @@ function TypographySection({
             />
           </div>
         </SettingRow>
+        <SettingRow title="打开字体目录" desc="也可以把字体文件直接放进这个目录">
+          <Button variant="outlined" icon="folder" onClick={() => void window.api.fonts.reveal()}>
+            打开目录
+          </Button>
+        </SettingRow>
+      </div>
+
+      <p className="tiny muted">
+        提示：内置字体已做中文子集化（约 5MB），不影响排版；自定义字体请优先使用 .ttf / .woff2，
+        删除字体不会影响已导入的书籍。{removing ? ' · 处理中…' : ''}
+      </p>
+    </>
+  )
+}
+
+/* ================================================================== */
+/* Page turn (shown inside 书库与阅读)                                  */
+/* ================================================================== */
+function FlipSection({
+  settings,
+  patch
+}: {
+  settings: Settings
+  patch: (p: SettingsPatch) => Promise<void>
+}): JSX.Element {
+  const rd = settings.reader
+  return (
+    <>
+      <h3 className="set-section-title" style={{ fontSize: 14 }}>
+        <Icon name="bookOpen" size={18} /> 翻页
+      </h3>
+      <p className="set-section-desc">
+        向左/右拖动书页边缘即可翻页；拖过触发距离或快速甩动生效，否则自动回弹。
+      </p>
+      <div className="set-card">
         <SettingRow title="翻页动画" desc="拖动页面时使用的过渡效果">
           <Segmented
             value={rd.flipAnimation}
@@ -556,17 +594,7 @@ function TypographySection({
             />
           </div>
         </SettingRow>
-        <SettingRow title="打开字体目录" desc="也可以把字体文件直接放进这个目录">
-          <Button variant="outlined" icon="folder" onClick={() => void window.api.fonts.reveal()}>
-            打开目录
-          </Button>
-        </SettingRow>
       </div>
-
-      <p className="tiny muted">
-        提示：内置字体已做中文子集化（约 5MB），不影响排版；自定义字体请优先使用 .ttf / .woff2，
-        删除字体不会影响已导入的书籍。{removing ? ' · 处理中…' : ''}
-      </p>
     </>
   )
 }
@@ -1074,6 +1102,9 @@ function LibrarySection({ settings, patch }: { settings: Settings; patch: (p: Se
           />
         </SettingRow>
       </div>
+
+      {/* page-turn behaviour belongs with the reading options */}
+      <FlipSection settings={settings} patch={patch} />
     </>
   )
 }

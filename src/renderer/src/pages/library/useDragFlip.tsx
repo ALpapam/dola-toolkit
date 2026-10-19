@@ -171,13 +171,25 @@ export function useDragFlip({
       const stage = stageRef.current
       if (!stage) return
       if (e.button !== 0) return
-      const rect = stage.getBoundingClientRect()
+
+      // Measure against the *paper*, never the stage. The page is centred in a
+      // much wider stage, and the `.flip-zone` click overlays sit on top of it,
+      // so `e.target` is often not a page element. Resolve the paper geometry
+      // from the DOM instead of from the event target.
+      const paper =
+        (stage.querySelector('.reader-spread.current') as HTMLElement | null) ??
+        (stage.querySelector('.reader-page') as HTMLElement | null) ??
+        stage
+      const rect = paper.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
-      // must start in the outer quarters, like a real book page edge
-      const edge = rect.width * 0.25
-      if (x > edge && x < rect.width - edge) return
-      // a selection in progress should win over the flip gesture
+      // ignore points outside the paper (side gutters, below the page)
+      if (x < 0 || x > rect.width || y < 0 || y > rect.height) return
+
+      // A horizontal swipe anywhere on the sheet turns the page (Tencent
+      // Reading behaves this way); the outer quarters additionally allow a
+      // short pull without travelling far.
+      // Text selection wins over the gesture.
       const sel = window.getSelection()
       if (sel && !sel.isCollapsed) return
 

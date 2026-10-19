@@ -92,11 +92,17 @@
   --rail-w: 88px;
   --rail-w-expanded: 236px;
   --titlebar-h: 40px;
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', system-ui,
-    sans-serif;
-  --font-display: 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
-  --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
-  --font-reading: 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', Georgia, serif;
+  /* `--app-font` is written at runtime from Settings → 外观 → 字体 and always
+     ends with a comma ("'Family',"). It is empty before a family is chosen, so
+     the system stacks below remain the fallback with no dangling comma. */
+  --app-font: ;
+  --font-ui: var(--app-font) 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI',
+    'PingFang SC', system-ui, sans-serif;
+  --font-display: var(--app-font) 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI',
+    system-ui, sans-serif;
+  --font-mono: var(--app-font) 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  --font-reading: var(--app-font) 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC',
+    'SimSun', Georgia, serif;
 }
 
 :root[data-theme='dark'] {

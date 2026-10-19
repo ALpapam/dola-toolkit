@@ -9,7 +9,7 @@ import { ToastHost } from './ui/toast'
 import { NavRail } from './shell/NavRail'
 import { TitleBar } from './shell/TitleBar'
 import { initThemeListeners, useTheme } from './theme/store'
-import { installFontFaces, resolveReadingFamily } from './pages/library/fonts'
+import { applyAppFont, installFontFaces, resolveReadingFamily } from './pages/library/fonts'
 
 export default function App(): JSX.Element {
   const page = useApp((s) => s.page)
@@ -39,6 +39,8 @@ export default function App(): JSX.Element {
             setFonts(list.fonts)
             setReadingFamily(resolveReadingFamily(settings.reader.fontFamily, list.fonts))
             installFontFaces(list.fonts)
+            // the chosen family styles the entire UI, not only book text
+            applyAppFont(settings.reader.fontFamily, list.fonts)
           }
         } catch {
           /* fonts are cosmetic — never block boot */
@@ -64,7 +66,9 @@ export default function App(): JSX.Element {
     const off = window.api.settings.onChanged((next) => {
       setSettings(next)
       themeSettings(next)
-      setReadingFamily(resolveReadingFamily(next.reader.fontFamily, useApp.getState().fonts))
+      const fonts = useApp.getState().fonts
+      setReadingFamily(resolveReadingFamily(next.reader.fontFamily, fonts))
+      applyAppFont(next.reader.fontFamily, fonts)
     })
     return off
   }, [setSettings, themeSettings, setReadingFamily])

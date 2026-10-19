@@ -994,6 +994,9 @@
   width: 25%;
   z-index: 3;
   cursor: pointer;
+  /* the drag gesture must receive pointerdown; this overlay is only a visual
+     hint and the stage does its own click-to-turn hit test */
+  pointer-events: none;
 }
 .flip-zone.left {
   left: 0;
