@@ -270,11 +270,49 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   const animateClickTurn = useCallback((dir: 'next' | 'prev'): Promise<void> => {
     const mode = flipModeRef.current
     if (mode === 'none') return Promise.resolve()
-    const w = pageBoxRef.current.w
 
-    // EPUB has no per-page sheet — animate its host instead
-    const epubHost = document.querySelector('.epub-host') as HTMLElement | null
-    const el = turnableRef.current ?? epubHost
+    // EPUB has no per-page element: its turn is played on a dedicated overlay
+    // that covers only the right half of the view and hinges on the gutter.
+    const epubSheet = epubSheetRef.current
+    if (epubSheet) {
+      const host = epubSheet.parentElement
+      const w = host ? host.getBoundingClientRect().width / 2 : pageBoxRef.current.w
+      const duration = TURN_DURATION
+      const start = performance.now()
+      epubSheet.classList.add('is-turning')
+      epubSheet.dataset.dir = dir
+      return new Promise<void>((resolve) => {
+        const step = (now: number): void => {
+          const t = Math.min(1, (now - start) / duration)
+          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+          const style = pageTurnStyle(
+            { progress: eased, dir, dragging: false, mode, hinge: 'left' },
+            w
+          )
+          epubSheet.style.transform = style.transform ?? ''
+          epubSheet.style.transformOrigin = (style.transformOrigin as string) ?? ''
+          epubSheet.style.boxShadow = (style.boxShadow as string) ?? ''
+          const shade = style['--turn-shade']
+          if (shade !== undefined) epubSheet.style.setProperty('--turn-shade', String(shade))
+          const curl = style['--turn-curl']
+          if (curl !== undefined) epubSheet.style.setProperty('--turn-curl', String(curl))
+          const lift = style['--turn-lift']
+          if (lift !== undefined) epubSheet.style.setProperty('--turn-lift', String(lift))
+          if (t < 1) requestAnimationFrame(step)
+          else {
+            epubSheet.classList.remove('is-turning')
+            epubSheet.style.transform = ''
+            epubSheet.style.boxShadow = ''
+            epubSheet.style.setProperty('--turn-shade', '0')
+            resolve()
+          }
+        }
+        requestAnimationFrame(step)
+      })
+    }
+
+    const w = pageBoxRef.current.w
+    const el = turnableRef.current
     if (!el) return Promise.resolve()
 
     const duration = TURN_DURATION
@@ -427,6 +465,8 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   // reader on every pointer move — and any unrelated re-render (a settings
   // broadcast, a font load) would snap the page back mid-gesture.
   const turnableRef = useRef<HTMLDivElement | null>(null)
+  /** the pseudo-sheet used for EPUB turns (see .epub-turn-sheet) */
+  const epubSheetRef = useRef<HTMLDivElement | null>(null)
   const dragState = useRef({ progress: 0, dir: 'next' as 'next' | 'prev', engaged: false })
   // Which edge the turning sheet is hinged on. A right-hand page (the sheet
   // that sweeps in a spread) hinges on its LEFT edge — the centre gutter — so
@@ -630,26 +670,35 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     },
     onRelease: (committed, dir) => {
       setSettling(true)
-      const el = document.querySelector('.epub-host') as HTMLElement | null
+      const sheet = epubSheetRef.current
       const mode = flipModeRef.current
-      // The chapter itself lives in epub.js's iframe and cannot be transformed
-      // per-page, so the whole host sheet is animated with the same rAF-driven
-      // curve the prose pages use (a CSS transition here would not interpolate,
-      // for the same coalescing reason documented on completeTurn).
-      const animateHost = (from: number, to: number, duration: number): Promise<void> => {
-        if (!el || mode === 'none') return Promise.resolve()
-        el.style.transition = 'none'
-        const w = el.getBoundingClientRect().width
+
+      /* The EPUB turn is played on the overlay sheet, never on the host: the
+         host is the whole book view, so rotating it swung the entire page (and
+         its next page) outside the stage's clipped box. The sheet only covers
+         the right half and hinges on the gutter, matching a real page. */
+      const animateSheet = (from: number, to: number, duration: number): Promise<void> => {
+        if (!sheet || mode === 'none') return Promise.resolve()
+        const host = sheet.parentElement
+        const w = host ? host.getBoundingClientRect().width / 2 : pageBoxRef.current.w
         const start = performance.now()
+        sheet.classList.add('is-turning')
+        sheet.dataset.dir = dir
         return new Promise((resolve) => {
           const step = (now: number): void => {
             const t = Math.min(1, (now - start) / duration)
             const eased = 1 - Math.pow(1 - t, 5)
             const p = from + (to - from) * eased
-            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: hingeRef.current }, w)
-            el.style.transform = style.transform ?? ''
-            el.style.boxShadow = (style.boxShadow as string) ?? ''
-            el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: 'left' }, w)
+            sheet.style.transform = style.transform ?? ''
+            sheet.style.transformOrigin = (style.transformOrigin as string) ?? ''
+            sheet.style.boxShadow = (style.boxShadow as string) ?? ''
+            const shade = style['--turn-shade']
+            if (shade !== undefined) sheet.style.setProperty('--turn-shade', String(shade))
+            const curl = style['--turn-curl']
+            if (curl !== undefined) sheet.style.setProperty('--turn-curl', String(curl))
+            const lift = style['--turn-lift']
+            if (lift !== undefined) sheet.style.setProperty('--turn-lift', String(lift))
             if (t < 1) requestAnimationFrame(step)
             else resolve()
           }
@@ -657,29 +706,28 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         })
       }
 
-      const resetHost = (): void => {
-        if (!el) return
-        el.style.transition = ''
-        el.style.transform = ''
-        el.style.boxShadow = ''
-        el.style.transformOrigin = ''
+      const resetSheet = (): void => {
+        if (!sheet) return
+        sheet.classList.remove('is-turning')
+        sheet.style.transform = ''
+        sheet.style.boxShadow = ''
+        sheet.style.setProperty('--turn-shade', '0')
       }
 
       if (committed) {
-        void animateHost(0, 1, TURN_DURATION).then(() => {
+        void animateSheet(0, 1, TURN_DURATION).then(() => {
           if (dir === 'next') goNext()
           else goPrev()
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
-          resetHost()
+          resetSheet()
         })
       } else {
-        // nothing was painted during the gesture, so just settle back to rest
-        window.setTimeout(() => {
+        void animateSheet(0.35, 0, 280).then(() => {
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
-          resetHost()
-        }, 260)
+          resetSheet()
+        })
       }
     }
   })
@@ -748,26 +796,41 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         ) : source.kind === 'pdf' ? (
           <PdfStage doc={pdf} page={pdfPage} />
         ) : source.kind === 'epub' && source.epubBase64 ? (
-          <EpubView
-            base64={source.epubBase64}
-            spread={twoUp ? 'auto' : 'none'}
-            theme={resolvedTheme}
-            fontSize={FONT_SIZE}
-            fontFamily={fontId}
-            startLocation={book.lastLocation}
-            onLocation={(pct, cfi) => {
-              setEpubPct(pct)
-              if (cfi) epubCfi.current = cfi
-              saveTimerRef.current && clearTimeout(saveTimerRef.current)
-              saveTimerRef.current = setTimeout(() => {
-                void window.api.library
-                  .updateBook(bookRef.current.id, { lastLocation: cfi, progress: pct })
-                  .catch(() => undefined)
-              }, 600)
-            }}
-            onReady={setEpubHandle}
-            onError={setError}
-          />
+          <div className="epub-turn-host">
+            <EpubView
+              base64={source.epubBase64}
+              spread={twoUp ? 'auto' : 'none'}
+              theme={resolvedTheme}
+              fontSize={FONT_SIZE}
+              fontFamily={fontId}
+              startLocation={book.lastLocation}
+              onLocation={(pct, cfi) => {
+                setEpubPct(pct)
+                if (cfi) epubCfi.current = cfi
+                saveTimerRef.current && clearTimeout(saveTimerRef.current)
+                saveTimerRef.current = setTimeout(() => {
+                  void window.api.library
+                    .updateBook(bookRef.current.id, { lastLocation: cfi, progress: pct })
+                    .catch(() => undefined)
+                }, 600)
+              }}
+              onReady={setEpubHandle}
+              onError={setError}
+            />
+            {/*
+              The sheet that physically turns in EPUB mode.
+
+              epub.js renders each chapter into an iframe that fills the whole
+              host, so there is no per-page element to hinge. Instead this
+              overlay mirrors the right half of the current view and rotates
+              around ITS left edge — the centre gutter — which is exactly how a
+              right-hand page peels in a real book. Its inner shadow is sampled
+              from nothing: it is a translucent sheet, so the live page stays
+              visible underneath and the turn cannot push content outside the
+              stage box.
+            */}
+            <div ref={epubSheetRef} className="epub-turn-sheet" aria-hidden />
+          </div>
         ) : (
           <div
             className="reader-spread-wrap"
