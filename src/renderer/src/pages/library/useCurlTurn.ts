@@ -119,29 +119,54 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
     [stageRef]
   )
 
-  /* ---- snapshot ------------------------------------------------------ */
-  const snapshot = useCallback(async (): Promise<HTMLImageElement | null> => {
-    const stage = stageRef.current
-    if (!stage) return null
-    const r = stage.getBoundingClientRect()
-    try {
-      const dataUrl = await window.api.app.capture({
-        x: Math.max(0, Math.round(r.left)),
-        y: Math.max(0, Math.round(r.top)),
-        width: Math.max(1, Math.round(r.width)),
-        height: Math.max(1, Math.round(r.height))
-      })
-      if (!dataUrl) return null
-      return await new Promise<HTMLImageElement | null>((res) => {
-        const img = new Image()
-        img.onload = () => res(img)
-        img.onerror = () => res(null)
-        img.src = dataUrl
-      })
-    } catch {
-      return null
-    }
-  }, [stageRef])
+  /** region of the stage to capture; smaller rect = faster IPC round-trip */
+  const snapshot = useCallback(
+    async (rect?: { x: number; y: number; width: number; height: number }): Promise<HTMLImageElement | null> => {
+      const stage = stageRef.current
+      if (!stage) return null
+      const r = stage.getBoundingClientRect()
+      const region = rect ?? {
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        width: Math.round(r.width),
+        height: Math.round(r.height)
+      }
+      try {
+        const dataUrl = await window.api.app.capture({
+          x: Math.max(0, region.x),
+          y: Math.max(0, region.y),
+          width: Math.max(1, region.width),
+          height: Math.max(1, region.height)
+        })
+        if (!dataUrl) return null
+        return await new Promise<HTMLImageElement | null>((res) => {
+          const img = new Image()
+          img.onload = () => res(img)
+          img.onerror = () => res(null)
+          img.src = dataUrl
+        })
+      } catch {
+        return null
+      }
+    },
+    [stageRef]
+  )
+
+  /**
+   * The reverse side of the leaf: the far half AFTER the content advanced.
+   * For `next` that is the new spread's LEFT page (it becomes the back of the
+   * sheet that just turned); for `prev` it is the new spread's RIGHT page.
+   */
+  const captureBack = useCallback(
+    async (geo: { sheet: Rect; base: Rect | null }): Promise<{ img: HTMLImageElement | null; rect: Rect | null }> => {
+      const stage = stageRef.current
+      if (!stage || !geo.base) return { img: null, rect: null }
+      const st = stage.getBoundingClientRect()
+      const r = { x: st.left + geo.base.x, y: st.top + geo.base.y, width: geo.base.w, height: geo.base.h }
+      return { img: await snapshot(r), rect: geo.base }
+    },
+    [stageRef, snapshot]
+  )
 
   /** rAF loop that advances `progress` from `from` to `to`. */
   const animate = useCallback(
@@ -176,11 +201,16 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       busy.current = true
       setPlaying(true)
       try {
-        // 1. old pixels, 2. new content, 3. let it paint, 4. animate over it
-        const snap = await snapshot()
-        renderer.setLayers(snap, geo.sheet, geo.base)
+        // 1. the leaf's front (as it looks now)
+        // 2. advance the content and let it paint
+        // 3. capture the far half — that is the leaf's printed reverse side
+        // 4. bend the leaf over the already-rendered new page
+        const front = await snapshot()
+        renderer.setLayers(front, null, geo.sheet, geo.base, geo.base)
         optsRef.current.onAdvance(dir)
         await nextPaint()
+        const back = await captureBack(geo)
+        renderer.setLayers(front, back.img, geo.sheet, geo.base, back.rect)
         await animate(dir, 0, 1, TURN_DURATION)
       } finally {
         renderer.clear()
@@ -188,7 +218,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         setPlaying(false)
       }
     },
-    [enabled, layout, snapshot, animate]
+    [enabled, layout, snapshot, captureBack, animate]
   )
 
   const onPointerDown = useCallback(
@@ -217,11 +247,14 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       let snapReady: HTMLImageElement | null = null
       void snapPromise.then((img) => {
         snapReady = img
-        if (img) renderer.setLayers(img, geo.sheet, geo.base)
+        if (img) renderer.setLayers(img, backReady, geo.sheet, geo.base, backRect)
       })
+      // the reverse side is captured once the new spread has painted
+      let backReady: HTMLImageElement | null = null
+      let backRect: Rect | null = geo.base
+      let advanced = false
 
       let moved = false
-      let advanced = false
       let progress = 0
 
       const onMove = (ev: PointerEvent): void => {
@@ -231,9 +264,15 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
           moved = true
           // commit as soon as the gesture is real, so the next spread renders
           // underneath while the sheet is still flat over it
-          renderer.setLayers(snapReady, geo.sheet, geo.base)
+          renderer.setLayers(snapReady, null, geo.sheet, geo.base, geo.base)
           optsRef.current.onAdvance(dir)
           advanced = true
+          void nextPaint().then(async () => {
+            const back = await captureBack(geo)
+            backReady = back.img
+            backRect = back.rect
+            renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
+          })
         }
         const signed = dir === 'next' ? -dx : dx
         progress = Math.max(0, Math.min(1, signed / dist))
