@@ -261,6 +261,8 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   )
 
   const goNext = useCallback(() => {
+    // a committed drag owns the page until its animation finishes; letting a
+    // second trigger through here is what makes a single flick skip spreads
     setTurnDir('next')
     if (isEpub) {
       epubHandle?.next()
@@ -320,21 +322,21 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   useHotkey('escape', onClose)
   useHotkey(' ', goNext)
 
-  /* wheel flips */
+  /* wheel flips — debounced hard so a trackpad's inertial scroll cannot rattle
+     through several spreads at once. `lockUntil` ignores the whole momentum
+     tail instead of re-arming every 320ms. */
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
-    let lock = false
+    let lockUntil = 0
     const onWheel = (e: WheelEvent): void => {
-      if (Math.abs(e.deltaY) < 20) return
+      if (Math.abs(e.deltaY) < 12) return
       e.preventDefault()
-      if (lock) return
-      lock = true
+      const now = performance.now()
+      if (now < lockUntil) return
+      lockUntil = now + 520
       if (e.deltaY > 0) goNext()
       else goPrev()
-      setTimeout(() => {
-        lock = false
-      }, 320)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -356,6 +358,10 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     engaged: false
   })
   const [settling, setSettling] = useState(false)
+  /** true while a committed turn animation is in flight */
+  const turning = useRef(false)
+  /** at most one turn queued behind the in-flight one */
+  const pendingTurn = useRef<'next' | 'prev' | null>(null)
 
   // latest geometry/mode for the imperative painter (avoids stale closures)
   const pageBoxRef = useRef({ w: pageBox.w })
@@ -498,14 +504,37 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       dragState.current = { progress: 0, dir, engaged: false }
       setSettling(true)
       if (committed) {
+        // Queue at most ONE pending turn. The committed animation holds the
+        // page for ~460ms; without this, a trackpad or a fast repeated flick
+        // could stack several turns and appear to "fly through the book".
+        if (turning.current) {
+          pendingTurn.current = dir
+          setSettling(false)
+          return
+        }
+        turning.current = true
         // finish the rotation, THEN advance the content — otherwise the page
         // snaps back to rest and the turn is invisible
         void completeTurn(dir, flipModeRef.current, from).then(() => {
           if (dir === 'next') goNext()
           else goPrev()
+          turning.current = false
+          // drain the single queued turn, if any
+          const queued = pendingTurn.current
+          pendingTurn.current = null
           setSettling(false)
           setDrag({ progress: 0, dir: 'next', engaged: false })
           paintTurn(0, 'next', false)
+          if (queued) {
+            turning.current = true
+            void completeTurn(queued, flipModeRef.current, 0).then(() => {
+              if (queued === 'next') goNext()
+              else goPrev()
+              turning.current = false
+              setDrag({ progress: 0, dir: 'next', engaged: false })
+              paintTurn(0, 'next', false)
+            })
+          }
         })
       } else {
         // under the threshold: spring back

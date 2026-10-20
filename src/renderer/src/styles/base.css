@@ -255,14 +255,20 @@ img {
   overflow: hidden;
   white-space: nowrap;
 }
-/* collapsed: a true square centred on the rail axis, so every icon sits in an
-   identical box instead of a wide one */
+/* Collapsed: a true square centred on the rail axis. `gap` MUST be zeroed —
+   the label is only collapsed to max-width:0, it is still a flex child, so a
+   leftover 12px gap would push the icon 6px left of the rail centre. */
 .rail:not(.expanded) .rail-item,
 .rail:not(.expanded) .rail-expand-btn {
   width: var(--rail-item-size);
   height: var(--rail-item-size);
   margin: 0 auto;
   border-radius: var(--shape-md);
+  gap: 0;
+}
+.rail:not(.expanded) .rail-item-label {
+  /* belt and braces: take the label out of the flex flow entirely */
+  display: none;
 }
 .rail.expanded .rail-item,
 .rail.expanded .rail-expand-btn {
