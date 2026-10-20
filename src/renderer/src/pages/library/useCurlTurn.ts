@@ -139,12 +139,50 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
           height: Math.max(1, region.height)
         })
         if (!dataUrl) return null
-        return await new Promise<HTMLImageElement | null>((res) => {
-          const img = new Image()
-          img.onload = () => res(img)
-          img.onerror = () => res(null)
-          img.src = dataUrl
+        const img = await new Promise<HTMLImageElement | null>((res) => {
+          const im = new Image()
+          im.onload = () => res(im)
+          im.onerror = () => res(null)
+          im.src = dataUrl
         })
+        if (!img) return null
+        /*
+         * Reject a blank capture.
+         *
+         * If the grab comes back as near-uniform white (window occluded, GPU
+         * surface not ready, wrong rect) the curl would draw a sheet of empty
+         * paper for the whole animation — exactly the "blank page until it
+         * lands" symptom. Treat it as a failed capture so the caller can fall
+         * back to a turn that keeps the real DOM text visible.
+         */
+        try {
+          const probe = document.createElement('canvas')
+          probe.width = 64
+          probe.height = 64
+          const pg = probe.getContext('2d')
+          if (pg) {
+            pg.drawImage(img, 0, 0, 64, 64)
+            const d = pg.getImageData(0, 0, 64, 64).data
+            let sum = 0
+            let sum2 = 0
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) {
+              const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+              sum += l
+              sum2 += l * l
+              n++
+            }
+            const mean = sum / n
+            const sd = Math.sqrt(Math.max(0, sum2 / n - mean * mean))
+            if (sd < 3) {
+              console.warn('[curl] blank snapshot (sd=' + sd.toFixed(1) + ') — using DOM fallback')
+              return null
+            }
+          }
+        } catch {
+          /* probe is best-effort */
+        }
+        return img
       } catch {
         return null
       }
@@ -192,6 +230,35 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
   const nextPaint = (): Promise<void> =>
     new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 
+  /**
+   * Transform-only turn used when no snapshot is available.
+   *
+   * It cannot curl (the sheet shape needs page pixels) but it never shows a
+   * blank sheet: the real pages stay in the DOM and simply slide/fade, so the
+   * text is on screen the entire time.
+   */
+  const domFallbackTurn = useCallback(
+    (dir: CurlDir): Promise<void> => {
+      optsRef.current.onAdvance(dir)
+      const stage = stageRef.current
+      if (!stage) return Promise.resolve()
+      const shift = dir === 'next' ? -5 : 5
+      try {
+        stage.animate(
+          [
+            { transform: `translateX(${shift}%)`, opacity: 0.72 },
+            { transform: 'translateX(0)', opacity: 1 }
+          ],
+          { duration: 280, easing: 'cubic-bezier(.22,1,.36,1)' }
+        )
+      } catch {
+        /* Element.animate unavailable: content already advanced, done */
+      }
+      return new Promise<void>((r) => setTimeout(r, 280))
+    },
+    [stageRef]
+  )
+
   const play = useCallback(
     async (dir: CurlDir): Promise<void> => {
       if (!enabled || busy.current) return
@@ -206,6 +273,17 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         // 3. capture the far half — that is the leaf's printed reverse side
         // 4. bend the leaf over the already-rendered new page
         const front = await snapshot()
+        if (!front) {
+          /*
+           * No snapshot (capture refused, DPI/scale mismatch, headless GPU…).
+           * Drawing the curl with no page image would show a blank sheet of
+           * paper, so fall back to a transform-only turn that always keeps the
+           * real DOM text visible.
+           */
+          console.warn('[curl] snapshot unavailable — using DOM fallback turn')
+          await domFallbackTurn(dir)
+          return
+        }
         renderer.setLayers(front, null, geo.sheet, geo.base, geo.base)
         optsRef.current.onAdvance(dir)
         await nextPaint()
@@ -218,7 +296,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         setPlaying(false)
       }
     },
-    [enabled, layout, snapshot, captureBack, animate]
+    [enabled, layout, snapshot, captureBack, animate, domFallbackTurn]
   )
 
   const onPointerDown = useCallback(
