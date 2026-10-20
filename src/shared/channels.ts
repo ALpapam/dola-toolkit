@@ -9,6 +9,7 @@ export const IPC = {
   appClose: 'app:close',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
+  appCapture: 'app:capture',
   appTitleBarTheme: 'app:titlebar-theme',
   appOpenLogs: 'app:open-logs',
 

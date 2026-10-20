@@ -2,7 +2,7 @@
 // Dola Toolkit — main entry (Electron main process)
 // ---------------------------------------------------------------------------
 
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, BrowserWindow, Notification, nativeTheme, protocol } from 'electron'
 import { IPC } from '@shared/channels'
@@ -58,6 +58,28 @@ process.on('warning', (warn) => {
 // ---------------------------------------------------------------------------
 // App identity / single instance
 // ---------------------------------------------------------------------------
+
+/**
+ * `app.disableHardwareAcceleration()` only takes effect before the app is ready,
+ * long before `initStore()` runs, so the one setting it depends on is peeked at
+ * from the settings file directly. Any failure is non-fatal: we simply keep the
+ * GPU, which is the default anyway.
+ */
+function applyEarlyGpuPreference(): void {
+  try {
+    const file = join(app.getPath('userData'), 'settings.json')
+    const raw = readFileSync(file, 'utf8')
+    const parsed = JSON.parse(raw) as { reader?: { gpuAcceleration?: unknown } }
+    if (parsed?.reader?.gpuAcceleration === false) {
+      app.disableHardwareAcceleration()
+      console.log('[Dola Toolkit] GPU acceleration disabled by settings')
+    }
+  } catch {
+    /* no settings file yet, or unreadable — keep the default (GPU on) */
+  }
+}
+
+applyEarlyGpuPreference()
 
 // The reader loads bundled + user-imported fonts from a custom scheme. It must
 // be declared privileged *before* the app becomes ready, otherwise Chromium

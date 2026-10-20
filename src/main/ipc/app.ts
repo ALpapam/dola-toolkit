@@ -140,4 +140,35 @@ export function registerAppIpc(): void {
       /* ignore */
     }
   })
+
+  /*
+   * Page-turn snapshot.
+   *
+   * The curl engine needs the sheet as pixels: it bends and shades the page
+   * strip by strip, which is impossible with DOM transforms and cannot reach
+   * into an epub.js iframe from the renderer. `capturePage` grabs what is
+   * actually on screen (iframes included), so this works for every format.
+   *
+   * Returns a data URL, or null when the capture fails — the renderer then
+   * draws a plain paper sheet so the animation still plays.
+   */
+  ipcMain.handle(IPC.appCapture, async (event, rect: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return null
+    const r = rect as { x?: unknown; y?: unknown; width?: unknown; height?: unknown } | null
+    const num = (v: unknown): number | undefined =>
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : undefined
+    try {
+      const image = await win.webContents.capturePage({
+        x: num(r?.x) ?? 0,
+        y: num(r?.y) ?? 0,
+        width: num(r?.width) ?? 0,
+        height: num(r?.height) ?? 0
+      })
+      if (image.isEmpty()) return null
+      return image.toDataURL()
+    } catch {
+      return null
+    }
+  })
 }

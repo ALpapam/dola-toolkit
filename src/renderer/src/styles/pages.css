@@ -1696,71 +1696,28 @@
    of the view. It hinges on its own left edge (the centre gutter), so turning
    only lifts that half while the live epub page stays put underneath.
    -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   Page-turn overlay (Canvas 2D curl engine).
+
+   The canvas is pinned over the whole reading stage and clipped by it, so a
+   turning sheet can never be painted outside the render frame — the failure
+   the old CSS-transform implementation kept hitting, especially for EPUB.
+   -------------------------------------------------------------------------- */
+.curl-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 30;
+}
+
 .epub-turn-host {
   position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
   display: flex;
-}
-.epub-turn-sheet {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 50%;
-  pointer-events: none;
-  opacity: 0;
-  transform-origin: left center;
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-  will-change: transform, opacity;
-  border-radius: 0 8px 8px 0;
-  /* page-ish tone so the lifted half reads as paper, not a glass pane */
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--md-surface-container-lowest) 92%, transparent),
-    var(--md-surface-container-lowest)
-  );
-}
-.epub-turn-sheet.is-turning {
-  opacity: 1;
-}
-/* paper shading, same vocabulary as the prose sheet */
-.epub-turn-sheet::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  opacity: clamp(0, var(--turn-shade, 0), 1);
-  background:
-    linear-gradient(
-      to right,
-      rgba(255, 255, 255, calc(var(--turn-curl, 0) * 0.5)) 0%,
-      rgba(255, 255, 255, calc(var(--turn-curl, 0) * 0.15)) 5%,
-      rgba(0, 0, 0, calc(var(--turn-curl, 0) * 0.16)) 14%,
-      transparent 36%
-    ),
-    linear-gradient(
-      to right,
-      rgba(0, 0, 0, 0.26) 0%,
-      rgba(0, 0, 0, 0.1) 32%,
-      rgba(255, 255, 255, 0.05) 64%,
-      rgba(255, 255, 255, 0.13) 100%
-    );
-}
-/* turning backwards: the sheet mirrors to the left half and hinges right */
-.epub-turn-sheet[data-dir='prev'] {
-  left: 0;
-  right: 50%;
-  border-radius: 8px 0 0 8px;
-  transform-origin: right center;
-  background: linear-gradient(
-    to left,
-    color-mix(in srgb, var(--md-surface-container-lowest) 92%, transparent),
-    var(--md-surface-container-lowest)
-  );
 }
 
 .epub-host-wrap {

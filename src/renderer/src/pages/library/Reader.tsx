@@ -10,15 +10,7 @@ import { EpubView, type EpubViewHandle } from './EpubView'
 import { paginate, type PageSlice } from './paginate'
 import { useLibrary } from './store'
 import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
-import {
-  useDragFlip,
-  useEpubGestureBridge,
-  pageTurnStyle,
-  TURN_DURATION,
-  TURN_EASE_OUT,
-  TURN_EASE_SPRING,
-  SPRING_DURATION
-} from './useDragFlip'
+import { useCurlTurn } from './useCurlTurn'
 
 /* ------------------------------------------------------------------ */
 /* PDF.js is loaded lazily so txt/epub readers never pay for it        */
@@ -259,141 +251,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     [source?.kind, totalPages]
   )
 
-  /**
-   * Plays the page-turn animation for a CLICK / keyboard turn.
-   *
-   * Dragging animates from the finger's progress, but a button press or the
-   * arrow keys have no gesture, so the sheet has to be driven from rest to the
-   * end of the turn before the content is swapped. Without this, clicking `<`
-   * or `>` snapped instantly (the user asked for the animation here too).
-   */
-  const animateClickTurn = useCallback((dir: 'next' | 'prev'): Promise<void> => {
-    const mode = flipModeRef.current
-    if (mode === 'none') return Promise.resolve()
-
-    // EPUB has no per-page element: its turn is played on a dedicated overlay
-    // that covers only the right half of the view and hinges on the gutter.
-    const epubSheet = epubSheetRef.current
-    if (epubSheet) {
-      const host = epubSheet.parentElement
-      const w = host ? host.getBoundingClientRect().width / 2 : pageBoxRef.current.w
-      const duration = TURN_DURATION
-      const start = performance.now()
-      epubSheet.classList.add('is-turning')
-      epubSheet.dataset.dir = dir
-      return new Promise<void>((resolve) => {
-        const step = (now: number): void => {
-          const t = Math.min(1, (now - start) / duration)
-          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-          const style = pageTurnStyle(
-            { progress: eased, dir, dragging: false, mode, hinge: 'left' },
-            w
-          )
-          epubSheet.style.transform = style.transform ?? ''
-          epubSheet.style.transformOrigin = (style.transformOrigin as string) ?? ''
-          epubSheet.style.boxShadow = (style.boxShadow as string) ?? ''
-          const shade = style['--turn-shade']
-          if (shade !== undefined) epubSheet.style.setProperty('--turn-shade', String(shade))
-          const curl = style['--turn-curl']
-          if (curl !== undefined) epubSheet.style.setProperty('--turn-curl', String(curl))
-          const lift = style['--turn-lift']
-          if (lift !== undefined) epubSheet.style.setProperty('--turn-lift', String(lift))
-          if (t < 1) requestAnimationFrame(step)
-          else {
-            epubSheet.classList.remove('is-turning')
-            epubSheet.style.transform = ''
-            epubSheet.style.boxShadow = ''
-            epubSheet.style.setProperty('--turn-shade', '0')
-            resolve()
-          }
-        }
-        requestAnimationFrame(step)
-      })
-    }
-
-    const w = pageBoxRef.current.w
-    const el = turnableRef.current
-    if (!el) return Promise.resolve()
-
-    const duration = TURN_DURATION
-    const start = performance.now()
-    el.style.transition = 'none'
-    return new Promise<void>((resolve) => {
-      const step = (now: number): void => {
-        const t = Math.min(1, (now - start) / duration)
-        // easeInOutCubic: starts gently, accelerates through the fold, lands soft
-        const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-        const style = pageTurnStyle(
-          { progress: eased, dir, dragging: false, mode, hinge: hingeRef.current },
-          w
-        )
-        el.style.transform = style.transform ?? ''
-        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
-        el.style.boxShadow = (style.boxShadow as string) ?? ''
-        const shade = style['--turn-shade']
-        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
-        const flip = style['--turn-flip']
-        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
-        const curl = style['--turn-curl']
-        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
-        const lift = style['--turn-lift']
-        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
-        if (t < 1) requestAnimationFrame(step)
-        else resolve()
-      }
-      requestAnimationFrame(step)
-    })
-  }, [])
-
-  const goNext = useCallback(() => {
-    setTurnDir('next')
-    if (isEpub) {
-      void animateClickTurn('next').then(() => epubHandle?.next())
-      return
-    }
-    if (source?.kind === 'pdf') {
-      void animateClickTurn('next').then(() =>
-        setPdfPage((p) => {
-          const next = Math.min(totalPages, p + 1)
-          persist(next - 1)
-          return next
-        })
-      )
-      return
-    }
-    void animateClickTurn('next').then(() =>
-      setIndex((i) => {
-        const next = Math.min(maxIndex, i + step)
-        persist(next)
-        return next
-      })
-    )
-  }, [source?.kind, maxIndex, step, totalPages, persist, isEpub, epubHandle, animateClickTurn])
-
-  const goPrev = useCallback(() => {
-    setTurnDir('prev')
-    if (isEpub) {
-      void animateClickTurn('prev').then(() => epubHandle?.prev())
-      return
-    }
-    if (source?.kind === 'pdf') {
-      void animateClickTurn('prev').then(() =>
-        setPdfPage((p) => {
-          const next = Math.max(1, p - 1)
-          persist(next - 1)
-          return next
-        })
-      )
-      return
-    }
-    void animateClickTurn('prev').then(() =>
-      setIndex((i) => {
-        const next = Math.max(0, i - step)
-        persist(next)
-        return next
-      })
-    )
-  }, [source?.kind, step, persist, isEpub, epubHandle, animateClickTurn])
 
   const jumpTo = (page: number): void => {
     setTurnDir('next')
@@ -407,6 +264,71 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       persist(i)
     }
   }
+
+  /* ---------------- page turns ---------------- */
+  // One Canvas 2D engine turns the page for every format. It snapshots the
+  // stage, bends the sheet strip-by-strip from the binding and clips itself to
+  // the stage box, so no format — EPUB included — can push content outside the
+  // render frame. See pageCurl.ts / useCurlTurn.ts.
+  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none'
+  const curl = useCurlTurn({
+    stageRef,
+    enabled: dragEnabled && !error,
+    gpuAcceleration: readerCfg?.gpuAcceleration ?? true,
+    threshold: (readerCfg?.dragThreshold ?? 26) / 100,
+    onTurn: (dir) => {
+      if (dir === 'next') advanceNext()
+      else advancePrev()
+    }
+  })
+
+  /** Advances the content without animating — the curl owns the animation. */
+  const advanceNext = useCallback(() => {
+    setTurnDir('next')
+    if (isEpub) {
+      epubHandle?.next()
+      return
+    }
+    if (source?.kind === 'pdf') {
+      setPdfPage((p) => {
+        const next = Math.min(totalPages, p + 1)
+        persist(next - 1)
+        return next
+      })
+      return
+    }
+    setIndex((i) => {
+      const next = Math.min(maxIndex, i + step)
+      persist(next)
+      return next
+    })
+  }, [source?.kind, maxIndex, step, totalPages, persist, isEpub, epubHandle])
+
+  const advancePrev = useCallback(() => {
+    setTurnDir('prev')
+    if (isEpub) {
+      epubHandle?.prev()
+      return
+    }
+    if (source?.kind === 'pdf') {
+      setPdfPage((p) => {
+        const next = Math.max(1, p - 1)
+        persist(next - 1)
+        return next
+      })
+      return
+    }
+    setIndex((i) => {
+      const next = Math.max(0, i - step)
+      persist(next)
+      return next
+    })
+  }, [source?.kind, step, persist, isEpub, epubHandle])
+
+  /** Buttons / keyboard: play the full curl, then advance. */
+  const goNext = useCallback(() => void curl.play('next'), [curl])
+  const goPrev = useCallback(() => void curl.play('prev'), [curl])
+
 
   useHotkey('arrowright', goNext)
   useHotkey('arrowleft', goPrev)
@@ -438,299 +360,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
 
   const leftSlice = prosePages[index]
   const rightSlice = twoUp ? prosePages[index + 1] : undefined
-
-  /* ---------------- drag-to-turn ---------------- */
-  // Grab the bottom-left / bottom-right corner of the sheet and pull: the page
-  // follows the pointer, then commits or springs back (Tencent Reading style).
-  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none'
-  const [drag, setDrag] = useState<{ progress: number; dir: 'next' | 'prev'; engaged: boolean }>({
-    progress: 0,
-    dir: 'next',
-    engaged: false
-  })
-  const [settling, setSettling] = useState(false)
-  /** true while a committed turn animation is in flight */
-  const turning = useRef(false)
-  /** at most one turn queued behind the in-flight one */
-  const pendingTurn = useRef<'next' | 'prev' | null>(null)
-
-  // latest geometry/mode for the imperative painter (avoids stale closures)
-  const pageBoxRef = useRef({ w: pageBox.w })
-  const flipModeRef = useRef(flipAnimation)
-  pageBoxRef.current = { w: pageBox.w }
-  flipModeRef.current = flipAnimation
-
-  // Live gesture visual is written straight to the DOM (transform on the
-  // turnable page). Routing it through React state would re-render the whole
-  // reader on every pointer move — and any unrelated re-render (a settings
-  // broadcast, a font load) would snap the page back mid-gesture.
-  const turnableRef = useRef<HTMLDivElement | null>(null)
-  /** the pseudo-sheet used for EPUB turns (see .epub-turn-sheet) */
-  const epubSheetRef = useRef<HTMLDivElement | null>(null)
-  const dragState = useRef({ progress: 0, dir: 'next' as 'next' | 'prev', engaged: false })
-  // Which edge the turning sheet is hinged on. A right-hand page (the sheet
-  // that sweeps in a spread) hinges on its LEFT edge — the centre gutter — so
-  // the paper peels off the binding instead of sliding off the screen edge.
-  const hingeRef = useRef<'left' | 'right'>('left')
-  hingeRef.current = 'left'
-
-  const paintTurn = useCallback(
-    (progress: number, dir: 'next' | 'prev', engaged: boolean) => {
-      const el = turnableRef.current
-      if (!el) return
-      const width = engaged ? el.getBoundingClientRect().width : pageBoxRef.current.w
-      const style = pageTurnStyle({ progress, dir, dragging: engaged, mode: flipModeRef.current, hinge: hingeRef.current }, width)
-      if (engaged) {
-        // tracking the pointer: no interpolation lag
-        el.style.transition = 'none'
-      } else if (progress === 0) {
-        // Spring back to rest after a cancelled gesture. The reflow in between
-        // is required for the same reason as in completeTurn: the gesture left
-        // `transition: none` applied, so without a flush the browser would
-        // resolve the change in one batch and the sheet would snap back.
-        el.style.transition = 'none'
-        void el.offsetWidth
-        el.style.transition = `transform ${SPRING_DURATION}ms ${TURN_EASE_SPRING}, box-shadow ${SPRING_DURATION}ms linear, opacity ${SPRING_DURATION}ms linear`
-      }
-      el.style.transform = style.transform ?? ''
-      el.style.transformOrigin = (style.transformOrigin as string) ?? ''
-      el.style.boxShadow = (style.boxShadow as string) ?? ''
-      el.style.opacity = (style.opacity as string) ?? ''
-      // the light sweep is driven by CSS variables so it interpolates too
-      const shade = style['--turn-shade']
-      if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
-      const flip = style['--turn-flip']
-      if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
-      const curl = style['--turn-curl']
-      if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
-      const lift = style['--turn-lift']
-      if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
-    },
-    []
-  )
-
-  /**
-   * Runs the *completion* half of a page turn.
-   *
-   * This is driven by requestAnimationFrame rather than a CSS transition on
-   * purpose. The drag pins `transition: none` on the element, and once that
-   * style has been resolved the browser coalesces a later
-   * "transition + new value" write into a single style change — the sheet jumps
-   * straight to the end instead of animating (which is exactly the "animation
-   * is too hard / never plays" symptom). Driving every frame ourselves gives a
-   * guaranteed smooth curve and lets the transform, the cast shadow and the
-   * light sweep advance together.
-   */
-  const completeTurn = useCallback(
-    (dir: 'next' | 'prev', mode: FlipAnimation, from: number) => {
-      const el = turnableRef.current
-      if (!el || mode === 'none') return Promise.resolve()
-
-      const w = pageBoxRef.current.w
-      const duration = TURN_DURATION
-      const start = performance.now()
-      el.style.transition = 'none'
-
-      const apply = (p: number): void => {
-        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: hingeRef.current }, w)
-        el.style.transform = style.transform ?? ''
-        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
-        el.style.boxShadow = (style.boxShadow as string) ?? ''
-        const shade = style['--turn-shade']
-        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
-        const flip = style['--turn-flip']
-        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
-        const curl = style['--turn-curl']
-        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
-        const lift = style['--turn-lift']
-        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
-      }
-
-      return new Promise<void>((resolve) => {
-        const step = (now: number): void => {
-          const t = Math.min(1, (now - start) / duration)
-          // easeOutQuint — a long, soft landing instead of a hard stop
-          const eased = 1 - Math.pow(1 - t, 5)
-          // continue from wherever the finger left the sheet
-          apply(from + (1 - from) * eased)
-          if (t < 1) requestAnimationFrame(step)
-          else resolve()
-        }
-        requestAnimationFrame(step)
-      })
-    },
-    []
-  )
-
-  /** Springs the sheet back to rest when the gesture was below the threshold. */
-  const springBack = useCallback((dir: 'next' | 'prev', from: number) => {
-    const el = turnableRef.current
-    if (!el) return Promise.resolve()
-    const w = pageBoxRef.current.w
-    const duration = SPRING_DURATION
-    const start = performance.now()
-    el.style.transition = 'none'
-    return new Promise<void>((resolve) => {
-      const step = (now: number): void => {
-        const t = Math.min(1, (now - start) / duration)
-        // gentle overshoot so the paper settles instead of stopping dead
-        const eased = 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2)
-        const p = Math.max(0, from * (1 - eased))
-        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode: flipModeRef.current, hinge: hingeRef.current }, w)
-        el.style.transform = style.transform ?? ''
-        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
-        el.style.boxShadow = (style.boxShadow as string) ?? ''
-        const shade = style['--turn-shade']
-        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
-        const flip = style['--turn-flip']
-        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
-        const curl = style['--turn-curl']
-        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
-        const lift = style['--turn-lift']
-        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
-        if (t < 1) requestAnimationFrame(step)
-        else resolve()
-      }
-      requestAnimationFrame(step)
-    })
-  }, [])
-
-  const { onPointerDown } = useDragFlip({
-    enabled: dragEnabled,
-    threshold: readerCfg?.dragThreshold ?? 26,
-    stageRef,
-    pageWidth: twoUp ? pageBox.w * 2 + 8 : pageBox.w,
-    zone: 'corners',
-    onNext: goNext,
-    onPrev: goPrev,
-    onProgress: (progress, dir, engaged) => {
-      dragState.current = { progress, dir, engaged }
-      if (!drag.engaged && engaged) setDrag({ progress, dir, engaged })
-      paintTurn(progress, dir, engaged)
-    },
-    onRelease: (committed) => {
-      const dir = dragState.current.dir
-      const from = dragState.current.progress
-      dragState.current = { progress: 0, dir, engaged: false }
-      setSettling(true)
-      if (committed) {
-        // Queue at most ONE pending turn. The committed animation holds the
-        // page for ~460ms; without this, a trackpad or a fast repeated flick
-        // could stack several turns and appear to "fly through the book".
-        if (turning.current) {
-          pendingTurn.current = dir
-          setSettling(false)
-          return
-        }
-        turning.current = true
-        // finish the rotation, THEN advance the content — otherwise the page
-        // snaps back to rest and the turn is invisible
-        void completeTurn(dir, flipModeRef.current, from).then(() => {
-          if (dir === 'next') goNext()
-          else goPrev()
-          turning.current = false
-          // drain the single queued turn, if any
-          const queued = pendingTurn.current
-          pendingTurn.current = null
-          setSettling(false)
-          setDrag({ progress: 0, dir: 'next', engaged: false })
-          paintTurn(0, 'next', false)
-          if (queued) {
-            turning.current = true
-            void completeTurn(queued, flipModeRef.current, 0).then(() => {
-              if (queued === 'next') goNext()
-              else goPrev()
-              turning.current = false
-              setDrag({ progress: 0, dir: 'next', engaged: false })
-              paintTurn(0, 'next', false)
-            })
-          }
-        })
-      } else {
-        // under the threshold: spring back
-        void springBack(dir, from).then(() => {
-          setSettling(false)
-          setDrag({ progress: 0, dir: 'next', engaged: false })
-          paintTurn(0, 'next', false)
-        })
-      }
-    }
-  })
-
-  // EPUB renders inside an iframe, so the same gesture arrives through a
-  // bridge instead of the stage's pointer events.
-  useEpubGestureBridge({
-    enabled: dragEnabled && isEpub,
-    stageRef,
-    threshold: readerCfg?.dragThreshold ?? 26,
-    onNext: goNext,
-    onPrev: goPrev,
-    onProgress: (progress, dir, engaged) => {
-      if (!drag.engaged && engaged) setDrag({ progress, dir, engaged })
-    },
-    onRelease: (committed, dir) => {
-      setSettling(true)
-      const sheet = epubSheetRef.current
-      const mode = flipModeRef.current
-
-      /* The EPUB turn is played on the overlay sheet, never on the host: the
-         host is the whole book view, so rotating it swung the entire page (and
-         its next page) outside the stage's clipped box. The sheet only covers
-         the right half and hinges on the gutter, matching a real page. */
-      const animateSheet = (from: number, to: number, duration: number): Promise<void> => {
-        if (!sheet || mode === 'none') return Promise.resolve()
-        const host = sheet.parentElement
-        const w = host ? host.getBoundingClientRect().width / 2 : pageBoxRef.current.w
-        const start = performance.now()
-        sheet.classList.add('is-turning')
-        sheet.dataset.dir = dir
-        return new Promise((resolve) => {
-          const step = (now: number): void => {
-            const t = Math.min(1, (now - start) / duration)
-            const eased = 1 - Math.pow(1 - t, 5)
-            const p = from + (to - from) * eased
-            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: 'left' }, w)
-            sheet.style.transform = style.transform ?? ''
-            sheet.style.transformOrigin = (style.transformOrigin as string) ?? ''
-            sheet.style.boxShadow = (style.boxShadow as string) ?? ''
-            const shade = style['--turn-shade']
-            if (shade !== undefined) sheet.style.setProperty('--turn-shade', String(shade))
-            const curl = style['--turn-curl']
-            if (curl !== undefined) sheet.style.setProperty('--turn-curl', String(curl))
-            const lift = style['--turn-lift']
-            if (lift !== undefined) sheet.style.setProperty('--turn-lift', String(lift))
-            if (t < 1) requestAnimationFrame(step)
-            else resolve()
-          }
-          requestAnimationFrame(step)
-        })
-      }
-
-      const resetSheet = (): void => {
-        if (!sheet) return
-        sheet.classList.remove('is-turning')
-        sheet.style.transform = ''
-        sheet.style.boxShadow = ''
-        sheet.style.setProperty('--turn-shade', '0')
-      }
-
-      if (committed) {
-        void animateSheet(0, 1, TURN_DURATION).then(() => {
-          if (dir === 'next') goNext()
-          else goPrev()
-          setSettling(false)
-          setDrag({ progress: 0, dir: 'next', engaged: false })
-          resetSheet()
-        })
-      } else {
-        void animateSheet(0.35, 0, 280).then(() => {
-          setSettling(false)
-          setDrag({ progress: 0, dir: 'next', engaged: false })
-          resetSheet()
-        })
-      }
-    }
-  })
 
   const toggleSpread = async (): Promise<void> => {
     if (!settings) return
@@ -776,9 +405,9 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       </div>
 
       <div
-        className={`reader-stage ${drag.engaged && !settling ? 'is-dragging' : ''}`}
+        className="reader-stage"
         ref={stageRef}
-        onPointerDown={onPointerDown}
+        onPointerDown={curl.onPointerDown}
       >
         {error ? (
           <div className="empty">
@@ -796,7 +425,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         ) : source.kind === 'pdf' ? (
           <PdfStage doc={pdf} page={pdfPage} />
         ) : source.kind === 'epub' && source.epubBase64 ? (
-          <div className="epub-turn-host">
+
             <EpubView
               base64={source.epubBase64}
               spread={twoUp ? 'auto' : 'none'}
@@ -817,53 +446,28 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
               onReady={setEpubHandle}
               onError={setError}
             />
-            {/*
-              The sheet that physically turns in EPUB mode.
-
-              epub.js renders each chapter into an iframe that fills the whole
-              host, so there is no per-page element to hinge. Instead this
-              overlay mirrors the right half of the current view and rotates
-              around ITS left edge — the centre gutter — which is exactly how a
-              right-hand page peels in a real book. Its inner shadow is sampled
-              from nothing: it is a translucent sheet, so the live page stays
-              visible underneath and the turn cannot push content outside the
-              stage box.
-            */}
-            <div ref={epubSheetRef} className="epub-turn-sheet" aria-hidden />
-          </div>
         ) : (
           <div
             className="reader-spread-wrap"
             style={{ ['--reading-font' as string]: readingFamily }}
           >
-            {/* the page being revealed underneath: shows the *next* spread so the
-                drag feels like lifting a real sheet (Tencent Reading / Fanqie) */}
+            {/* The next spread is always rendered underneath the current one.
+                The curl engine snapshots the live pixels, so whatever this
+                layer shows is exactly what the reader sees as the sheet lifts. */}
             <div
               className="reader-spread under"
               style={{ width: twoUp ? pageBox.w * 2 + 8 : pageBox.w, height: pageBox.h }}
               aria-hidden
             >
-              {drag.dir === 'prev' && index > 0 ? (
-                <div className="reader-page-nested">
-                  <div
-                    className="page-inner"
-                    style={{ fontFamily: 'var(--reading-font, var(--font-reading))' }}
-                    dangerouslySetInnerHTML={{
-                      __html: prosePages[Math.max(0, index - step)]?.html ?? ''
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="reader-page-nested">
-                  <div
-                    className="page-inner"
-                    style={{ fontFamily: 'var(--reading-font, var(--font-reading))' }}
-                    dangerouslySetInnerHTML={{
-                      __html: prosePages[Math.min(prosePages.length - 1, index + step)]?.html ?? ''
-                    }}
-                  />
-                </div>
-              )}
+              <div className="reader-page-nested">
+                <div
+                  className="page-inner"
+                  style={{ fontFamily: 'var(--reading-font, var(--font-reading))' }}
+                  dangerouslySetInnerHTML={{
+                    __html: prosePages[Math.min(prosePages.length - 1, index + step)]?.html ?? ''
+                  }}
+                />
+              </div>
               <div className="under-page-brand">
                 <Icon name="bookOpen" size={30} />
                 <span>{book.title}</span>
@@ -871,15 +475,14 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
             </div>
 
             <div
-              className={`reader-spread current ${drag.engaged ? 'is-dragging' : ''}`}
+              className="reader-spread current"
               style={{
                 ['--turn-dir' as string]: turnDir === 'next' ? '18px' : '-18px',
                 ['--reading-font' as string]: readingFamily
               }}
             >
               <div
-                ref={twoUp ? undefined : turnableRef}
-                className={`reader-page ${twoUp ? 'left-page' : 'only'} page-turn ${leftSlice?.image ? 'illustration-page' : ''} ${drag.engaged && twoUp ? 'is-static-half' : ''} ${twoUp ? '' : 'reader-page-turnable'}`}
+                className={`reader-page ${twoUp ? 'left-page' : 'only'} page-turn ${leftSlice?.image ? 'illustration-page' : ''}`}
                 style={{ width: pageBox.w, height: pageBox.h }}
               >
                 <div className="page-inner" dangerouslySetInnerHTML={{ __html: leftSlice?.html ?? '' }} />
@@ -887,8 +490,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
               </div>
               {twoUp && rightSlice ? (
                 <div
-                  ref={turnableRef}
-                  className={`reader-page right-page page-turn ${rightSlice?.image ? 'illustration-page' : ''} reader-page-turnable`}
+                  className={`reader-page right-page page-turn ${rightSlice?.image ? 'illustration-page' : ''}`}
                   style={{ width: pageBox.w, height: pageBox.h }}
                 >
                   <div className="page-inner" dangerouslySetInnerHTML={{ __html: rightSlice.html }} />

@@ -584,6 +584,27 @@ function FlipSection({
         <SettingRow title="拖动翻页" desc="按住页面左/右四分之一处左右拖动即可翻页">
           <Switch checked={rd.dragFlip} onChange={(v) => void patch({ reader: { dragFlip: v } })} />
         </SettingRow>
+        {/*
+          GPU 开关。关闭后主进程在启动时调用 app.disableHardwareAcceleration()，
+          整个界面改为软件渲染；翻页引擎会自动切到低开销档（更少的切片、关闭
+          柔和投影），保证没有硬件加速的机器也能流畅翻页。
+        */}
+        <SettingRow
+          title="启用 GPU 加速"
+          desc={
+            rd.gpuAcceleration
+              ? '使用硬件加速渲染，动画最流畅。显卡驱动异常或画面撕裂时请关闭'
+              : '已关闭硬件加速：软件渲染 + 低开销翻页，兼容性最好。更改需重启应用生效'
+          }
+        >
+          <Switch
+            checked={rd.gpuAcceleration}
+            onChange={(v) => {
+              void patch({ reader: { gpuAcceleration: v } })
+              toast.info(v ? 'GPU 加速已开启，重启后生效' : 'GPU 加速已关闭，重启后生效')
+            }}
+          />
+        </SettingRow>
         <SettingRow title="翻页触发距离" desc={`拖过页面宽度的 ${rd.dragThreshold}% 即翻页`}>
           <div style={{ width: 190 }}>
             <Slider

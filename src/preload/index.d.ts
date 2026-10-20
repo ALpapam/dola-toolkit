@@ -37,6 +37,8 @@ export interface DolaToolkitApi {
     openExternal(url: string): Promise<void>
     showItem(path: string): Promise<void>
     openLogs(): Promise<void>
+    /** page-turn snapshot of a rect inside the window content (data URL) */
+    capture(rect: { x: number; y: number; width: number; height: number }): Promise<string | null>
     setTitleBarTheme(dark: boolean): void
   }
   settings: {

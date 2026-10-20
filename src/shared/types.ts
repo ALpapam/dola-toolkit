@@ -89,6 +89,13 @@ export interface ReaderSettings {
   dragFlip: boolean
   /** % of page width the drag must travel before the turn commits */
   dragThreshold: number
+  /**
+   * Use the GPU for compositing. Off = Chromium software rendering
+   * (`app.disableHardwareAcceleration()`), which keeps the app usable on
+   * machines with weak/broken GPU drivers. The page-turn engine automatically
+   * drops to a cheaper quality profile in that mode.
+   */
+  gpuAcceleration: boolean
 }
 
 export interface FontFace {

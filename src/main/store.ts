@@ -91,7 +91,8 @@ export const DEFAULT_SETTINGS: Settings = {
     lineHeight: 1.9,
     flipAnimation: 'cover',
     dragFlip: true,
-    dragThreshold: 26
+    dragThreshold: 26,
+    gpuAcceleration: true
   },
   general: {
     language: 'zh',
@@ -351,6 +352,7 @@ function normalizeSettings(): void {
   if (!['slide', 'cover', 'curl', 'none'].includes(rd.flipAnimation)) rd.flipAnimation = 'cover'
   if (typeof rd.dragFlip !== 'boolean') rd.dragFlip = true
   rd.dragThreshold = Math.round(clampNum(rd.dragThreshold, 8, 60, 26))
+  if (typeof rd.gpuAcceleration !== 'boolean') rd.gpuAcceleration = true
 
   const s = settings.sync
   if (typeof s.enabled !== 'boolean') s.enabled = false

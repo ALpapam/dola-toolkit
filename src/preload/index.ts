@@ -17,6 +17,8 @@ const api = {
     openExternal: (url: string) => ipcRenderer.invoke(IPC.appOpenExternal, url),
     showItem: (path: string) => ipcRenderer.invoke(IPC.appShowItem, path),
     openLogs: () => ipcRenderer.invoke(IPC.appOpenLogs),
+    capture: (rect: { x: number; y: number; width: number; height: number }) =>
+      ipcRenderer.invoke(IPC.appCapture, rect),
     setTitleBarTheme: (dark: boolean) => ipcRenderer.send(IPC.appTitleBarTheme, dark)
   },
   settings: {
