@@ -1072,17 +1072,6 @@ function LibrarySection({ settings, patch }: { settings: Settings; patch: (p: Se
             ]}
           />
         </SettingRow>
-        <SettingRow title="翻页方式" desc="悬浮按钮 / 按住页面下角 1/4 区域 / 两者">
-          <Segmented
-            value={l.flipMode}
-            onChange={(v) => void patch({ library: { flipMode: v as typeof l.flipMode } })}
-            options={[
-              { value: 'button', icon: 'chevronDown', label: '按钮' },
-              { value: 'zone', icon: 'touchApp' as IconName, label: '区域' },
-              { value: 'both', icon: 'apps', label: '两者' }
-            ]}
-          />
-        </SettingRow>
         <SettingRow title="封面尺寸" desc={`${l.coverWidth}px`}>
           <div style={{ width: 200 }}>
             <Slider value={l.coverWidth} min={120} max={260} step={10} onChange={(v) => void patch({ library: { coverWidth: v } })} />
@@ -1121,24 +1110,11 @@ function GeneralSection({ settings, patch }: { settings: Settings; patch: (p: Se
         <Icon name="tune" size={20} /> 通用
       </h2>
       <div className="set-card">
-        <SettingRow title="语言" desc="界面语言（暂只提供简体中文）">
-          <Select
-            value={g.language}
-            onChange={(v) => void patch({ general: { language: v as 'zh' | 'en' } })}
-            options={[
-              { value: 'zh', label: '简体中文' },
-              { value: 'en', label: 'English (partial)' }
-            ]}
-          />
-        </SettingRow>
         <SettingRow title="关闭时最小化到后台" desc="保持代理与同步继续运行">
           <Switch checked={g.closeToTray} onChange={(v) => void patch({ general: { closeToTray: v } })} />
         </SettingRow>
         <SettingRow title="开机自启" desc="登录 Windows 后自动启动 Dola Toolkit">
           <Switch checked={g.launchAtLogin} onChange={(v) => void patch({ general: { launchAtLogin: v } })} />
-        </SettingRow>
-        <SettingRow title="检查更新" desc="启动时检查新版本（beta 通道）">
-          <Switch checked={g.checkUpdates} onChange={(v) => void patch({ general: { checkUpdates: v } })} />
         </SettingRow>
         <SettingRow title="重置全部设置" desc="恢复默认配置，不影响书库与节点">
           <Button variant="danger" icon="restore" onClick={() => setConfirmReset(true)}>

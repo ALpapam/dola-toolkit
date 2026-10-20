@@ -904,23 +904,53 @@
   will-change: transform;
 }
 
-/* Soft light sweep across the lifting sheet. `--turn-shade` (0..1) and
-   `--turn-flip` (+1 next / -1 prev) are written by pageTurnStyle; mirroring the
-   gradient with scaleX is cheaper than swapping the whole background. */
+/* --------------------------------------------------------------------------
+   Paper shading for the turning sheet.
+
+   `--turn-shade` (0..1) drives the overall tint, `--turn-curl` bends a light
+   band across the sheet near the spine (the fake "curled paper" highlight) and
+   `--turn-lift` controls how far the cast shadow spreads. Together they read as
+   a real page peeling off the binding rather than a flat rectangle rotating.
+   -------------------------------------------------------------------------- */
 .reader-page.reader-page-turnable::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  transform: scaleX(var(--turn-flip, 1));
   opacity: clamp(0, var(--turn-shade, 0), 1);
+  background:
+    /* a bright rim right at the fold, as if the paper catches the light */
+    linear-gradient(
+      to right,
+      rgba(255, 255, 255, calc(var(--turn-curl, 0) * 0.5)) 0%,
+      rgba(255, 255, 255, calc(var(--turn-curl, 0) * 0.16)) 4%,
+      rgba(0, 0, 0, calc(var(--turn-curl, 0) * 0.14)) 12%,
+      transparent 34%
+    ),
+    /* the general shading across the sheet */
+    linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.3) 0%,
+      rgba(0, 0, 0, 0.12) 30%,
+      rgba(255, 255, 255, 0.05) 62%,
+      rgba(255, 255, 255, 0.14) 100%
+    );
+}
+
+/* the edge of the sheet itself: a thin bright line is what sells the thickness */
+.reader-page.reader-page-turnable::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: clamp(0, var(--turn-lift, 0), 1);
   background: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.34) 0%,
-    rgba(0, 0, 0, 0.14) 38%,
-    rgba(255, 255, 255, 0.06) 72%,
-    rgba(255, 255, 255, 0.16) 100%
+    rgba(255, 255, 255, 0.55) 0px,
+    rgba(200, 196, 205, 0.32) 2px,
+    transparent 3px
   );
 }
 

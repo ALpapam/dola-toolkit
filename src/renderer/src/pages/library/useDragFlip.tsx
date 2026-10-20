@@ -281,6 +281,12 @@ export interface TurnVisual {
   dragging: boolean
   /** animation style from settings */
   mode: FlipAnimation
+  /**
+   * Which edge of the TURNING page is the spine (its hinge).
+   * A right-hand page hinges on its left edge; a left-hand page on its right.
+   * Defaults to 'left'.
+   */
+  hinge?: 'left' | 'right'
 }
 
 /**
@@ -304,10 +310,12 @@ export const TURN_EASE_SPRING = 'cubic-bezier(.34,1.4,.64,1)'
 export const TURN_DURATION = 460
 export const SPRING_DURATION = 520
 
-/** CSSProperties plus the two custom properties the turn animation writes. */
+/** CSSProperties plus the custom properties the turn animation writes. */
 export type TurnStyle = React.CSSProperties & {
   '--turn-shade'?: string | number
   '--turn-flip'?: string | number
+  '--turn-curl'?: string | number
+  '--turn-lift'?: string | number
 }
 
 export function pageTurnStyle(visual: TurnVisual, pageWidth: number): TurnStyle {
@@ -320,7 +328,12 @@ export function pageTurnStyle(visual: TurnVisual, pageWidth: number): TurnStyle 
   const eased = Math.max(0, Math.min(1, progress))
 
   if (mode === 'none' || eased === 0) {
-    return { ['--turn-shade' as string]: '0', ['--turn-flip' as string]: String(sign) }
+    return {
+      ['--turn-shade' as string]: '0',
+      ['--turn-flip' as string]: String(sign),
+      ['--turn-curl' as string]: '0',
+      ['--turn-lift' as string]: '0'
+    }
   }
 
   // a bell curve: 0 at both ends, 1 in the middle — used for the arc/lift so the
@@ -333,6 +346,8 @@ export function pageTurnStyle(visual: TurnVisual, pageWidth: number): TurnStyle 
       opacity: '1',
       ['--turn-shade' as string]: String(eased * 0.8),
       ['--turn-flip' as string]: String(sign),
+      ['--turn-curl' as string]: '0',
+      ['--turn-lift' as string]: String(arc),
       boxShadow: `0 ${arc * 22}px ${arc * 44}px -${arc * 20}px rgba(0,0,0,.38)`,
       willChange: 'transform',
       transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
@@ -345,26 +360,49 @@ export function pageTurnStyle(visual: TurnVisual, pageWidth: number): TurnStyle 
       opacity: '1',
       ['--turn-shade' as string]: String(eased * 1.1),
       ['--turn-flip' as string]: String(sign),
+      ['--turn-curl' as string]: String(eased),
+      ['--turn-lift' as string]: String(arc),
       boxShadow: `inset ${-sign * eased * 46}px 0 52px -24px rgba(0,0,0,.5)`,
       willChange: 'transform',
       transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
     }
   }
 
-  // cover: lift the sheet, rotate it around the spine, and let it settle softly
-  const angle = eased * 70 // degrees — a little less than before so it reads softer
-  const origin = dir === 'next' ? 'left center' : 'right center'
+  /* ---------------------------------------------------------------
+     cover = a real book being opened (the PTQBookPageView / iOS feel)
+
+     The hinge is the page's INNER edge — the gutter — not the outer edge
+     of the window. The sheet is always the page on the spine side:
+       · forward: the right page peels from the gutter, sweeps left, and
+         covers the left page, revealing the next two pages
+       · backward: the left page peels from the gutter and sweeps right
+
+     `origin` therefore depends on WHICH PAGE is turning, which the reader
+     tells us via `hinge`. When the hinge is on the right (a right page),
+     rotating +angle swings it leftwards over the other half.
+     --------------------------------------------------------------- */
+  const hinge = visual.hinge ?? 'left'
+  const origin = hinge === 'left' ? 'left center' : 'right center'
+  // a right-hand page opens towards the left (negative rotation), and the
+  // left-hand page opens towards the right
+  const openSign = hinge === 'left' ? -1 : 1
+  const angle = eased * 178 // lands almost flat on the far side
+  // perspective tightens as the sheet turns edge-on, which gives the arc depth
+  const persp = 1500 + arc * 1000
+
   return {
     transform:
-      `perspective(2200px) ` +
-      `translate3d(${sign * eased * 8}px, ${-arc * 12}px, 0) ` +
-      `rotateY(${dir === 'next' ? -angle : angle}deg) ` +
-      `scale(${1 - arc * 0.018})`,
+      `perspective(${Math.round(persp)}px) ` +
+      `translate3d(0, ${-arc * 8}px, 0) ` +
+      `rotateY(${openSign * angle}deg)`,
     transformOrigin: origin,
+    // no scale: scaling would break the hinge illusion
     ['--turn-shade' as string]: String(eased),
     ['--turn-flip' as string]: String(sign),
-    // a soft cast shadow that grows as the page lifts, instead of a hard inset
-    boxShadow: `0 ${arc * 26}px ${arc * 52}px -${arc * 22}px rgba(0,0,0,.42)`,
+    ['--turn-curl' as string]: String(eased),
+    ['--turn-lift' as string]: String(arc),
+    // the shadow is cast onto the page underneath, strongest near the spine
+    boxShadow: `${openSign * -1 * arc * 30}px ${arc * 12}px ${arc * 52}px -${arc * 18}px rgba(0,0,0,.5)`,
     willChange: 'transform',
     transition: dragging ? 'none' : `transform ${TURN_DURATION}ms ${TURN_EASE_OUT}`
   }

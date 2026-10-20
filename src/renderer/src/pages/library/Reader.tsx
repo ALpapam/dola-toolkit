@@ -91,7 +91,6 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         : window.matchMedia('(prefers-color-scheme: dark)').matches
           ? 'dark'
           : 'light'
-  const flipMode = lib?.flipMode ?? 'both'
 
   /* page geometry is derived from the stage, not window.innerHeight, so the
      chrome (rail, title bar, header) never skews the aspect ratio test */
@@ -260,49 +259,103 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     [source?.kind, totalPages]
   )
 
+  /**
+   * Plays the page-turn animation for a CLICK / keyboard turn.
+   *
+   * Dragging animates from the finger's progress, but a button press or the
+   * arrow keys have no gesture, so the sheet has to be driven from rest to the
+   * end of the turn before the content is swapped. Without this, clicking `<`
+   * or `>` snapped instantly (the user asked for the animation here too).
+   */
+  const animateClickTurn = useCallback((dir: 'next' | 'prev'): Promise<void> => {
+    const mode = flipModeRef.current
+    if (mode === 'none') return Promise.resolve()
+    const w = pageBoxRef.current.w
+
+    // EPUB has no per-page sheet — animate its host instead
+    const epubHost = document.querySelector('.epub-host') as HTMLElement | null
+    const el = turnableRef.current ?? epubHost
+    if (!el) return Promise.resolve()
+
+    const duration = TURN_DURATION
+    const start = performance.now()
+    el.style.transition = 'none'
+    return new Promise<void>((resolve) => {
+      const step = (now: number): void => {
+        const t = Math.min(1, (now - start) / duration)
+        // easeInOutCubic: starts gently, accelerates through the fold, lands soft
+        const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+        const style = pageTurnStyle(
+          { progress: eased, dir, dragging: false, mode, hinge: hingeRef.current },
+          w
+        )
+        el.style.transform = style.transform ?? ''
+        el.style.transformOrigin = (style.transformOrigin as string) ?? ''
+        el.style.boxShadow = (style.boxShadow as string) ?? ''
+        const shade = style['--turn-shade']
+        if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
+        const flip = style['--turn-flip']
+        if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+        const curl = style['--turn-curl']
+        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
+        const lift = style['--turn-lift']
+        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
+        if (t < 1) requestAnimationFrame(step)
+        else resolve()
+      }
+      requestAnimationFrame(step)
+    })
+  }, [])
+
   const goNext = useCallback(() => {
-    // a committed drag owns the page until its animation finishes; letting a
-    // second trigger through here is what makes a single flick skip spreads
     setTurnDir('next')
     if (isEpub) {
-      epubHandle?.next()
+      void animateClickTurn('next').then(() => epubHandle?.next())
       return
     }
     if (source?.kind === 'pdf') {
-      setPdfPage((p) => {
-        const next = Math.min(totalPages, p + 1)
-        persist(next - 1)
-        return next
-      })
+      void animateClickTurn('next').then(() =>
+        setPdfPage((p) => {
+          const next = Math.min(totalPages, p + 1)
+          persist(next - 1)
+          return next
+        })
+      )
       return
     }
-    setIndex((i) => {
-      const next = Math.min(maxIndex, i + step)
-      persist(next)
-      return next
-    })
-  }, [source?.kind, maxIndex, step, totalPages, persist, isEpub, epubHandle])
+    void animateClickTurn('next').then(() =>
+      setIndex((i) => {
+        const next = Math.min(maxIndex, i + step)
+        persist(next)
+        return next
+      })
+    )
+  }, [source?.kind, maxIndex, step, totalPages, persist, isEpub, epubHandle, animateClickTurn])
 
   const goPrev = useCallback(() => {
     setTurnDir('prev')
     if (isEpub) {
-      epubHandle?.prev()
+      void animateClickTurn('prev').then(() => epubHandle?.prev())
       return
     }
     if (source?.kind === 'pdf') {
-      setPdfPage((p) => {
-        const next = Math.max(1, p - 1)
-        persist(next - 1)
-        return next
-      })
+      void animateClickTurn('prev').then(() =>
+        setPdfPage((p) => {
+          const next = Math.max(1, p - 1)
+          persist(next - 1)
+          return next
+        })
+      )
       return
     }
-    setIndex((i) => {
-      const next = Math.max(0, i - step)
-      persist(next)
-      return next
-    })
-  }, [source?.kind, step, persist, isEpub, epubHandle])
+    void animateClickTurn('prev').then(() =>
+      setIndex((i) => {
+        const next = Math.max(0, i - step)
+        persist(next)
+        return next
+      })
+    )
+  }, [source?.kind, step, persist, isEpub, epubHandle, animateClickTurn])
 
   const jumpTo = (page: number): void => {
     setTurnDir('next')
@@ -375,13 +428,18 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   // broadcast, a font load) would snap the page back mid-gesture.
   const turnableRef = useRef<HTMLDivElement | null>(null)
   const dragState = useRef({ progress: 0, dir: 'next' as 'next' | 'prev', engaged: false })
+  // Which edge the turning sheet is hinged on. A right-hand page (the sheet
+  // that sweeps in a spread) hinges on its LEFT edge — the centre gutter — so
+  // the paper peels off the binding instead of sliding off the screen edge.
+  const hingeRef = useRef<'left' | 'right'>('left')
+  hingeRef.current = 'left'
 
   const paintTurn = useCallback(
     (progress: number, dir: 'next' | 'prev', engaged: boolean) => {
       const el = turnableRef.current
       if (!el) return
       const width = engaged ? el.getBoundingClientRect().width : pageBoxRef.current.w
-      const style = pageTurnStyle({ progress, dir, dragging: engaged, mode: flipModeRef.current }, width)
+      const style = pageTurnStyle({ progress, dir, dragging: engaged, mode: flipModeRef.current, hinge: hingeRef.current }, width)
       if (engaged) {
         // tracking the pointer: no interpolation lag
         el.style.transition = 'none'
@@ -398,11 +456,15 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       el.style.transformOrigin = (style.transformOrigin as string) ?? ''
       el.style.boxShadow = (style.boxShadow as string) ?? ''
       el.style.opacity = (style.opacity as string) ?? ''
-      // the light sweep is driven by a CSS variable so it interpolates too
+      // the light sweep is driven by CSS variables so it interpolates too
       const shade = style['--turn-shade']
       if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
       const flip = style['--turn-flip']
       if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+      const curl = style['--turn-curl']
+      if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
+      const lift = style['--turn-lift']
+      if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
     },
     []
   )
@@ -430,7 +492,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       el.style.transition = 'none'
 
       const apply = (p: number): void => {
-        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode }, w)
+        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: hingeRef.current }, w)
         el.style.transform = style.transform ?? ''
         el.style.transformOrigin = (style.transformOrigin as string) ?? ''
         el.style.boxShadow = (style.boxShadow as string) ?? ''
@@ -438,6 +500,10 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
         const flip = style['--turn-flip']
         if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+        const curl = style['--turn-curl']
+        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
+        const lift = style['--turn-lift']
+        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
       }
 
       return new Promise<void>((resolve) => {
@@ -470,7 +536,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         // gentle overshoot so the paper settles instead of stopping dead
         const eased = 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2)
         const p = Math.max(0, from * (1 - eased))
-        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode: flipModeRef.current }, w)
+        const style = pageTurnStyle({ progress: p, dir, dragging: false, mode: flipModeRef.current, hinge: hingeRef.current }, w)
         el.style.transform = style.transform ?? ''
         el.style.transformOrigin = (style.transformOrigin as string) ?? ''
         el.style.boxShadow = (style.boxShadow as string) ?? ''
@@ -478,6 +544,10 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
         if (shade !== undefined) el.style.setProperty('--turn-shade', String(shade))
         const flip = style['--turn-flip']
         if (flip !== undefined) el.style.setProperty('--turn-flip', String(flip))
+        const curl = style['--turn-curl']
+        if (curl !== undefined) el.style.setProperty('--turn-curl', String(curl))
+        const lift = style['--turn-lift']
+        if (lift !== undefined) el.style.setProperty('--turn-lift', String(lift))
         if (t < 1) requestAnimationFrame(step)
         else resolve()
       }
@@ -576,7 +646,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
             const t = Math.min(1, (now - start) / duration)
             const eased = 1 - Math.pow(1 - t, 5)
             const p = from + (to - from) * eased
-            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode }, w)
+            const style = pageTurnStyle({ progress: p, dir, dragging: false, mode, hinge: hingeRef.current }, w)
             el.style.transform = style.transform ?? ''
             el.style.boxShadow = (style.boxShadow as string) ?? ''
             el.style.transformOrigin = (style.transformOrigin as string) ?? ''
@@ -766,14 +836,15 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
           </div>
         )}
 
-        {flipMode !== 'zone' ? (
-          <>
-            <button
-              className="flip-fab prev"
-              onClick={(e) => {
-                e.stopPropagation()
-                goPrev()
-              }}
+        {/* page-turn buttons are always available: the two ways to turn a page
+            are these buttons and dragging the sheet */}
+        <>
+          <button
+            className="flip-fab prev"
+            onClick={(e) => {
+              e.stopPropagation()
+              goPrev()
+            }}
               disabled={!isEpub && logical <= 0}
               title="上一页 (←)"
             >
@@ -790,8 +861,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
             >
               <Icon name="chevronRight" size={26} />
             </button>
-          </>
-        ) : null}
+        </>
       </div>
 
       <div className="reader-foot">
