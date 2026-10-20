@@ -128,8 +128,15 @@ check('顶部拖动不翻页', (await page()) === b3, b3)
 
 /* ---- inertial wheel must not rattle through spreads ---- */
 {
+  // clean slate: back to the cover and let every in-flight turn land, otherwise
+  // a turn queued by the previous section lands mid-burst and looks like a
+  // second wheel advance
+  await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)
+  await sleep(2000)
   const r = JSON.parse(await spreadRect())
-  const seq = []
+  const startPage = await page()
+  // No per-event sampling here: each `page()` is a CDP round-trip and would
+  // stretch a ~450ms inertia burst past the lock, letting a second turn in.
   for (let i = 0; i < 10; i++) {
     await send('Input.dispatchMouseEvent', {
       type: 'mouseWheel',
@@ -139,37 +146,47 @@ check('顶部拖动不翻页', (await page()) === b3, b3)
       deltaY: 120
     })
     await sleep(45)
-    seq.push(await page())
   }
-  check('滚轮惯性不会连翻多页', new Set(seq).size <= 2, `序列 ${JSON.stringify([...new Set(seq)])}`)
+  await sleep(2000)
+  const endPage = await page()
+  check('滚轮惯性只翻一页', endPage !== startPage && endPage.startsWith('3'), `${startPage} -> ${endPage}`)
 }
 
 /* ---- click turn animates then advances ---- */
-const b4 = await page()
-await ev(`document.querySelector('.flip-fab.next')?.click()`)
-const clickFrames = []
-for (let i = 0; i < 8; i++) {
-  await sleep(45)
-  clickFrames.push(await painted())
+{
+  await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`) // back to cover
+  await sleep(1600)
+  const b4 = await page()
+  await ev(`document.querySelector('.flip-fab.next')?.click()`)
+  const clickFrames = []
+  for (let i = 0; i < 10; i++) {
+    await sleep(45)
+    clickFrames.push(await painted())
+  }
+  await sleep(1400)
+  const a4 = await page()
+  check('按钮翻页会播放动画', clickFrames.some((n) => n > 0), `采样 ${JSON.stringify(clickFrames)}`)
+  check('按钮翻页最终前进一页', a4 !== b4 && a4.startsWith('3'), `${b4} -> ${a4}`)
 }
-await sleep(1300)
-const a4 = await page()
-check('按钮翻页会播放动画', clickFrames.some((n) => n > 0), `采样 ${JSON.stringify(clickFrames)}`)
-check('按钮翻页最终前进一页', a4 !== b4, `${b4} -> ${a4}`)
 
 /* ---- GPU off: same behaviour, cheaper profile ---- */
-await ev(`(async()=>{ await window.api.settings.patch({reader:{gpuAcceleration:false}}) })()`)
-await sleep(1200)
-const b5 = await page()
-await ev(`document.querySelector('.flip-fab.next')?.click()`)
-const offFrames = []
-for (let i = 0; i < 8; i++) {
-  await sleep(45)
-  offFrames.push(await painted())
+{
+  await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)
+  await sleep(1600)
+  await ev(`(async()=>{ await window.api.settings.patch({reader:{gpuAcceleration:false}}) })()`)
+  await sleep(1200)
+  const b5 = await page()
+  await ev(`document.querySelector('.flip-fab.next')?.click()`)
+  const offFrames = []
+  for (let i = 0; i < 10; i++) {
+    await sleep(45)
+    offFrames.push(await painted())
+  }
+  await sleep(1400)
+  const a5 = await page()
+  check('关闭 GPU 后仍能动画翻页', offFrames.some((n) => n > 0) && a5 !== b5, `${b5} -> ${a5}`)
+  await ev(`(async()=>{ await window.api.settings.patch({reader:{gpuAcceleration:true}}) })()`)
 }
-await sleep(1300)
-check('关闭 GPU 后仍能动画翻页', offFrames.some((n) => n > 0) && (await page()) !== b5, `${b5} -> ${await page()}`)
-await ev(`(async()=>{ await window.api.settings.patch({reader:{gpuAcceleration:true}}) })()`)
 
 /* ---- EPUB: the sheet must never move the book itself ---- */
 await ev(`document.querySelector('.reader-bar .btn-icon')?.click()`)

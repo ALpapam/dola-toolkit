@@ -1,56 +1,56 @@
 // ---------------------------------------------------------------------------
 // Dola Toolkit — paper-curl page turn renderer (Canvas 2D)
 //
-// Why a rewrite: the previous implementation rotated a flat DOM rectangle with
-// CSS 3D. That can only ever look like a card pivoting, and it forced ugly
-// workarounds (a translucent overlay for EPUB, content escaping the stage box).
+// Three layers, like a real book (and like SlimeNull/PageTurningEffect):
 //
-// This engine rasterises the page once per turn and then bends the sheet as a
-// strip-wise curve, which is how a real book page behaves:
-//   · the sheet is hinged at the gutter (its inner edge)
-//   · each vertical strip is rotated a little more than the one before it, so
-//     the free edge lags and the paper reads as curved
-//   · strips facing away from the light are drawn as the page's BACK (mirrored
-//     and darkened), so the flip-over is visible
-//   · a soft shadow is cast onto the page underneath, strongest at the fold
+//   base patch  the half of the OLD spread that must stay visible while the
+//               sheet sweeps over it (its source pixels are snapshotted before
+//               the content advances)
+//   sheet       the page being turned, drawn back as vertical strips whose
+//               angles increase away from the binding, so it actually bends
+//   live DOM    the ALREADY-RENDERED next spread, showing through wherever the
+//               canvas is transparent
 //
-// Everything is plain Canvas 2D, so it stays usable with hardware acceleration
-// disabled (quality/strip count is the only thing that changes).
+// The next spread is committed before the animation starts, so there is no
+// "wait then jump" at the end — the new page is on screen the whole time.
+//
+// Everything is plain Canvas 2D and therefore works with hardware acceleration
+// disabled; only the strip count and the soft shading change.
 // ---------------------------------------------------------------------------
 
 export type CurlDir = 'next' | 'prev'
 
 export interface CurlFrame {
-  /** 0 = flat, 1 = sheet has landed on the far side */
+  /** 0 = sheet flat over its own half, 1 = sheet has landed on the far side */
   progress: number
   dir: CurlDir
 }
 
 export interface CurlQuality {
-  /** number of vertical strips used to bend the sheet */
+  /** vertical strips used to bend the sheet */
   strips: number
-  /** draw the cast shadow on the page underneath */
+  /** draw the soft cast shadow on the page underneath */
   shadow: boolean
   /** draw the specular highlight along the fold */
   highlight: boolean
 }
 
 export const CURL_QUALITY: Record<'high' | 'low', CurlQuality> = {
-  // GPU on: plenty of strips, full shading
   high: { strips: 110, shadow: true, highlight: true },
-  // GPU off: fewer strips and no soft shadow — the two things that dominate
-  // software rasterisation cost — while keeping the motion identical
+  // GPU off: far fewer strips and no soft shadow — those two dominate software
+  // rasterisation cost. The motion is identical.
   low: { strips: 40, shadow: false, highlight: false }
 }
 
-/** Paper tone used for the back of the sheet and when no snapshot is available. */
-const PAPER = '#fffbfe'
-const PAPER_DARK = '#efe9f2'
-
-function isBackFace(angle: number): boolean {
-  // cos < 0 means the strip has turned past edge-on: we see the reverse side
-  return Math.cos(angle) < 0
+interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
 }
+
+const PAPER = '#fffbfe'
+const PAPER_BACK = '#ece6ef'
 
 export class PageCurlRenderer {
   private canvas: HTMLCanvasElement
@@ -58,10 +58,12 @@ export class PageCurlRenderer {
   private dpr = 1
   private quality: CurlQuality = CURL_QUALITY.high
 
-  /** the page being turned (front face) */
-  private sheet: HTMLImageElement | null = null
-  /** the page revealed underneath; not required, the live DOM shows through */
-  private under: HTMLImageElement | null = null
+  /** the snapshot the sheet and base patch are cut from */
+  private snap: HTMLImageElement | null = null
+  /** rect of the sheet (the half that turns) inside the canvas, CSS px */
+  private sheet: Rect = { x: 0, y: 0, w: 0, h: 0 }
+  /** rect of the base patch (the half that stays), CSS px */
+  private base: Rect | null = null
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -74,10 +76,15 @@ export class PageCurlRenderer {
     this.quality = q
   }
 
-  /** Images are optional: without them the sheet is drawn as plain paper. */
-  setImages(sheet: HTMLImageElement | null, under: HTMLImageElement | null): void {
+  /**
+   * @param snap  stage-sized screenshot taken BEFORE the page advanced
+   * @param sheet the turning half, in canvas CSS px
+   * @param base  the half that must keep showing the OLD content, or null
+   */
+  setLayers(snap: HTMLImageElement | null, sheet: Rect, base: Rect | null): void {
+    this.snap = snap
     this.sheet = sheet
-    this.under = under
+    this.base = base
   }
 
   resize(cssWidth: number, cssHeight: number, dpr: number): void {
@@ -93,122 +100,142 @@ export class PageCurlRenderer {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
   }
 
-  /**
-   * Draw one frame.
-   *
-   * `bounds` is the sheet's rectangle inside the canvas (CSS px): the right
-   * half in a spread, the whole page when single.
-   */
-  render(frame: CurlFrame, bounds: { x: number; y: number; w: number; h: number }): void {
+  /** Draws the still-old half so it does not flick to the new page too early. */
+  private drawBase(): void {
+    const { ctx, snap, base } = this
+    if (!snap || !base) return
+    // the snapshot is stage-sized; work out the ratio between image and CSS px
+    const sx = snap.naturalWidth / (this.canvas.width / this.dpr)
+    const sy = snap.naturalHeight / (this.canvas.height / this.dpr)
+    ctx.drawImage(
+      snap,
+      base.x * sx,
+      base.y * sy,
+      base.w * sx,
+      base.h * sy,
+      base.x,
+      base.y,
+      base.w,
+      base.h
+    )
+  }
+
+  render(frame: CurlFrame): void {
     const { ctx } = this
     const { strips, shadow, highlight } = this.quality
     const p = Math.max(0, Math.min(1, frame.progress))
     this.clear()
-
     if (p <= 0.0001) return
 
     ctx.save()
     ctx.scale(this.dpr, this.dpr)
-    ctx.translate(bounds.x, bounds.y)
 
-    const W = bounds.w
-    const H = bounds.h
+    // --- old half stays put until the sheet sweeps over it
+    this.drawBase()
+
+    const S = this.sheet
+    const W = S.w
+    const H = S.h
     const dir = frame.dir
 
     /*
-     * Total rotation of the hinge is PI (half a turn). The free edge bends a
-     * further `CURL` radians so the sheet arcs instead of staying rigid.
-     * `next` swings the right page leftwards over the left page; `prev` mirrors.
+     * The hinge is the binding: the sheet's INNER edge.
+     *   next — the right page: hinge at its left edge, lying to the +x side at
+     *          rest and swinging over to the -x side as it turns
+     *   prev — the left page:  hinge at its right edge, mirror image
+     */
+    const hingeX = dir === 'next' ? S.x : S.x + W
+
+    /*
+     * total rotation is half a turn; the free edge bends further so the paper
+     * arcs. Angles are integrated to positions, which is what makes the sheet
+     * read as curved rather than a rigid card.
      */
     const total = Math.PI * p
-    const CURL = 0.55 * Math.sin(Math.PI * Math.min(1, p * 1.15))
-
-    // Integrate the strip angles into screen positions.
-    const dStep = 1 / strips
-    const xs: number[] = new Array(strips + 1)
-    const angles: number[] = new Array(strips + 1)
+    const CURL = 0.5 * Math.sin(Math.PI * Math.min(1, p * 1.15))
+    const step = 1 / strips
+    const pos: number[] = new Array(strips + 1)
+    const ang: number[] = new Array(strips + 1)
     let cursor = 0
     for (let i = 0; i <= strips; i++) {
       const t = i / strips
-      // near the hinge the sheet barely bends; the free edge curls the most
       const a = total + CURL * Math.pow(t, 1.6)
-      angles[i] = a
-      xs[i] = cursor
-      cursor += Math.cos(a) * dStep * W
+      ang[i] = a
+      pos[i] = cursor
+      cursor += Math.cos(a) * step * W
     }
 
-    // The sheet is drawn in its own space where x grows away from the hinge.
-    // For `prev` we mirror the whole thing so it peels from the other side.
-    const mirrored = dir === 'prev'
-    if (mirrored) {
-      ctx.translate(W, 0)
-      ctx.scale(-1, 1)
-    }
+    const snap = this.snap
+    // snapshot is stage-sized; convert canvas CSS px -> image px
+    const scaleX = snap ? snap.naturalWidth / (this.canvas.width / this.dpr) : 1
+    const scaleY = snap ? snap.naturalHeight / (this.canvas.height / this.dpr) : 1
+    const srcX = S.x * scaleX
+    const srcY = S.y * scaleY
+    const srcH = H * scaleY
+    const colW = (W * scaleX) / strips
 
-    // ---- cast shadow on the page underneath (drawn first, behind the sheet)
+    // --- cast shadow, cast onto the half the sheet is sweeping over
     if (shadow && p < 0.98) {
-      const foldX = xs[strips]
-      const shade = ctx.createLinearGradient(Math.min(0, foldX) - W * 0.28, 0, Math.max(0, foldX), 0)
-      shade.addColorStop(0, 'rgba(0,0,0,0)')
-      shade.addColorStop(0.65, `rgba(0,0,0,${0.10 + 0.16 * Math.sin(Math.PI * p)})`)
-      shade.addColorStop(1, `rgba(0,0,0,${0.06 + 0.12 * Math.sin(Math.PI * p)})`)
-      ctx.fillStyle = shade
-      ctx.fillRect(Math.min(0, foldX) - W * 0.3, 0, W * 0.3 + Math.abs(foldX) + W * 0.02, H)
+      const reach = W * (0.22 + 0.1 * Math.sin(Math.PI * p))
+      const swingSign = dir === 'next' ? -1 : 1
+      const edge = hingeX + swingSign * reach
+      const g = ctx.createLinearGradient(hingeX, 0, edge, 0)
+      g.addColorStop(0, `rgba(0,0,0,${0.02 + 0.2 * Math.sin(Math.PI * p)})`)
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = g
+      ctx.fillRect(Math.min(hingeX, edge), S.y, Math.abs(edge - hingeX), H)
     }
 
-    // ---- the sheet itself, strip by strip
+    // --- the sheet, strip by strip
     for (let i = 0; i < strips; i++) {
-      const x0 = xs[i]
-      const x1 = xs[i + 1]
-      const w = x1 - x0
-      if (Math.abs(w) < 0.02) continue
+      const a = ang[i]
+      const x0 = pos[i]
+      const x1 = pos[i + 1]
+      const dw = x1 - x0
+      if (Math.abs(dw) < 0.02) continue
 
-      const a = angles[i]
-      const back = isBackFace(a)
-      // how squarely the strip faces the viewer: drives the shading
+      const back = Math.cos(a) < 0
       const facing = Math.abs(Math.cos(a))
 
-      const sx = (i / strips) * (this.sheet?.naturalWidth ?? 1)
-      const sw = (1 / strips) * (this.sheet?.naturalWidth ?? 1)
-
       ctx.save()
-      // Mirroring the strip when we see its reverse side is what makes the
-      // page look like it flipped over rather than vanished.
+      // Place the strip. `next` grows away from the hinge on +x; `prev` is the
+      // mirror image, which is why it also needs the horizontal flip.
+      if (dir === 'next') {
+        ctx.translate(hingeX + x0, S.y)
+      } else {
+        ctx.translate(hingeX - x0, S.y)
+        ctx.scale(-1, 1)
+      }
       if (back) {
-        ctx.translate(x0 + x1, 0)
+        // seeing the reverse side: mirror the strip about its own centre
+        ctx.translate(Math.abs(dw), 0)
         ctx.scale(-1, 1)
       }
 
-      if (this.sheet && this.sheet.complete && this.sheet.naturalWidth > 0) {
-        const srcH = this.sheet.naturalHeight
-        const destH = H * (1 - 0.02 * Math.sin(Math.PI * p) * (i / strips))
-        ctx.drawImage(this.sheet, sx, 0, sw, srcH, back ? 0 : x0, 0, Math.abs(w), destH)
-        // the back of the paper is slightly darker / tinted
+      if (snap && snap.naturalWidth > 0) {
+        ctx.drawImage(snap, srcX + i * colW, srcY, Math.max(0.5, colW), srcH, 0, 0, Math.abs(dw) + 0.6, H)
+        ctx.globalCompositeOperation = 'source-atop'
         if (back) {
-          ctx.globalCompositeOperation = 'source-atop'
-          ctx.fillStyle = `rgba(120,110,125,${0.22 + 0.3 * (1 - facing)})`
-          ctx.fillRect(0, 0, Math.abs(w) + 1, H)
-          ctx.globalCompositeOperation = 'source-over'
-        } else if (facing < 0.999) {
-          ctx.globalCompositeOperation = 'source-atop'
-          ctx.fillStyle = `rgba(0,0,0,${(1 - facing) * 0.42})`
-          ctx.fillRect(0, 0, Math.abs(w) + 1, H)
-          ctx.globalCompositeOperation = 'source-over'
+          ctx.fillStyle = `rgba(118,108,124,${0.18 + 0.34 * (1 - facing)})`
+        } else {
+          ctx.fillStyle = `rgba(0,0,0,${(1 - facing) * 0.4})`
         }
+        ctx.fillRect(-1, 0, Math.abs(dw) + 2, H)
+        ctx.globalCompositeOperation = 'source-over'
       } else {
-        // no snapshot: draw an honest paper sheet so the motion still reads
-        const lit = 0.5 + 0.5 * facing
+        // no snapshot yet: honest paper, so the motion still reads
+        const lit = 0.45 + 0.55 * facing
         ctx.fillStyle = back
-          ? PAPER_DARK
-          : mixHex(PAPER, '#000000', (1 - lit) * 0.35)
-        ctx.fillRect(back ? 0 : x0, 0, Math.abs(w) + 0.6, H)
+          ? PAPER_BACK
+          : `rgb(${Math.round(255 * lit + 40 * (1 - lit))},${Math.round(251 * lit + 40 * (1 - lit))},${Math.round(254 * lit + 44 * (1 - lit))})`
+        ctx.fillRect(-0.5, 0, Math.abs(dw) + 1, H)
       }
 
-      // specular band right at the fold
-      if (highlight && i < strips * 0.12) {
-        const t = 1 - i / (strips * 0.12)
-        ctx.fillStyle = `rgba(255,255,255,${0.42 * t * Math.sin(Math.PI * p)})`
-        ctx.fillRect(back ? 0 : x0, 0, Math.abs(w) + 0.6, H)
+      // bright specular line right at the fold
+      if (highlight && i < strips * 0.1) {
+        const t = 1 - i / (strips * 0.1)
+        ctx.fillStyle = `rgba(255,255,255,${0.4 * t * Math.sin(Math.PI * p)})`
+        ctx.fillRect(-0.5, 0, Math.abs(dw) + 1, H)
       }
       ctx.restore()
     }
@@ -217,19 +244,4 @@ export class PageCurlRenderer {
   }
 }
 
-/** Small hex lerp used for the fallback paper shading. */
-function mixHex(a: string, b: string, t: number): string {
-  const pa = hexToRgb(a)
-  const pb = hexToRgb(b)
-  const k = Math.max(0, Math.min(1, t))
-  const r = Math.round(pa[0] + (pb[0] - pa[0]) * k)
-  const g = Math.round(pa[1] + (pb[1] - pa[1]) * k)
-  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * k)
-  return `rgb(${r},${g},${bl})`
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '')
-  const n = Number.parseInt(h.length === 3 ? h.replace(/(.)/g, '$1$1') : h, 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
+export { PAPER }

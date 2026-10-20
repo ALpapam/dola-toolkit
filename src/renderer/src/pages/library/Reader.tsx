@@ -276,7 +276,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     enabled: dragEnabled && !error,
     gpuAcceleration: readerCfg?.gpuAcceleration ?? true,
     threshold: (readerCfg?.dragThreshold ?? 26) / 100,
-    onTurn: (dir) => {
+    onAdvance: (dir: 'next' | 'prev') => {
       if (dir === 'next') advanceNext()
       else advancePrev()
     }
@@ -335,25 +335,34 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   useHotkey('escape', onClose)
   useHotkey(' ', goNext)
 
-  /* wheel flips — debounced hard so a trackpad's inertial scroll cannot rattle
-     through several spreads at once. `lockUntil` ignores the whole momentum
-     tail instead of re-arming every 320ms. */
+  /* Wheel flips — debounced hard so a trackpad's inertial scroll cannot rattle
+     through several spreads at once.
+
+     The lock lives in a ref and the listener is attached ONCE: `goNext/goPrev`
+     are rebuilt on every render (they close over the curl api object), so
+     depending on them re-subscribed the handler and reset the lock to zero
+     mid-burst, which let a single flick turn two spreads. */
+  const wheelLock = useRef(0)
+  const goNextRef = useRef(goNext)
+  const goPrevRef = useRef(goPrev)
+  goNextRef.current = goNext
+  goPrevRef.current = goPrev
+
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
-    let lockUntil = 0
     const onWheel = (e: WheelEvent): void => {
       if (Math.abs(e.deltaY) < 12) return
       e.preventDefault()
       const now = performance.now()
-      if (now < lockUntil) return
-      lockUntil = now + 520
-      if (e.deltaY > 0) goNext()
-      else goPrev()
+      if (now < wheelLock.current) return
+      wheelLock.current = now + 620
+      if (e.deltaY > 0) goNextRef.current()
+      else goPrevRef.current()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [goNext, goPrev])
+  }, [stageRef])
 
   /* Clicking the page no longer turns it: page turning is drag-only (bottom-left
      / bottom-right drag on the sheet) plus the < > buttons and keyboard. */
