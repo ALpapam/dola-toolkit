@@ -1089,7 +1089,9 @@
 
 .flip-fab {
   position: absolute;
-  z-index: 6;
+  /* must stay ABOVE .curl-canvas (z-index 30), otherwise the turning sheet
+     paints over the < > buttons */
+  z-index: 40;
   width: 52px;
   height: 52px;
   border-radius: 18px;

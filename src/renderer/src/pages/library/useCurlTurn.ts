@@ -23,6 +23,12 @@ export interface CurlTurnOptions {
   stageRef: React.RefObject<HTMLElement | null>
   enabled: boolean
   gpuAcceleration: boolean
+  /**
+   * Whether the reader is showing a two-page spread. This comes from the reader
+   * itself: guessing it from the paper's aspect ratio mis-classified a wide
+   * single page as a spread, which made the turn hinge in the middle of it.
+   */
+  twoUp: boolean
   /** 0..1 fraction of the sheet width the drag must cross to commit */
   threshold: number
   /**
@@ -47,11 +53,13 @@ interface Rect {
 }
 
 export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
-  const { stageRef, enabled, gpuAcceleration, threshold, onAdvance } = opts
+  const { stageRef, enabled, gpuAcceleration, twoUp, threshold, onAdvance } = opts
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rendererRef = useRef<PageCurlRenderer | null>(null)
   const [playing, setPlaying] = useState(false)
   const busy = useRef(false)
+  const twoUpRef = useRef(twoUp)
+  twoUpRef.current = twoUp
   const optsRef = useRef(opts)
   optsRef.current = opts
 
@@ -100,11 +108,10 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       const st = stage.getBoundingClientRect()
       const pr = paper.getBoundingClientRect()
       if (pr.width < 4 || pr.height < 4) return null
-      const twoUp = pr.width > pr.height * 0.95 && pr.width > 520
       // canvas-relative
       const px = pr.x - st.x
       const py = pr.y - st.y
-      if (!twoUp) {
+      if (!twoUpRef.current) {
         return { sheet: { x: px, y: py, w: pr.width, h: pr.height }, base: null, twoUp: false }
       }
       const half = pr.width / 2

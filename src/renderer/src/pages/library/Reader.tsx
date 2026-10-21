@@ -275,6 +275,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     stageRef,
     enabled: dragEnabled && !error,
     gpuAcceleration: readerCfg?.gpuAcceleration ?? true,
+    twoUp,
     threshold: (readerCfg?.dragThreshold ?? 26) / 100,
     onAdvance: (dir: 'next' | 'prev') => {
       if (dir === 'next') advanceNext()

@@ -157,6 +157,22 @@ export class PageCurlRenderer {
     const dir = frame.dir
     const strips = this.quality.strips
 
+    /*
+     * Single-page mode has no second half to catch the leaf, so its swept part
+     * would otherwise fly out of the page into the stage margin — which reads as
+     * "the turn starts in the middle of the window". Clipping every frame to the
+     * page rectangle keeps the whole animation inside the paper: it peels from
+     * the outer edge and folds away at the binding, the way a lone sheet does.
+     */
+    ctx.save()
+    if (!this.base) {
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+      ctx.beginPath()
+      ctx.rect(S.x, S.y, S.w, S.h)
+      ctx.clip()
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+    }
+
     const hingeX = dir === 'next' ? S.x : S.x + W
     const total = Math.PI * p
     // the free edge curls further than the hinge — that is what makes paper arc
@@ -299,6 +315,8 @@ export class PageCurlRenderer {
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(this.off, 0, 0)
+    ctx.restore()
+    // closes the single-page clip opened at the top of render()
     ctx.restore()
   }
 
