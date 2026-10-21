@@ -369,10 +369,25 @@
   word-break: break-all;
 }
 
+/* 日志卡片：唯一需要占满剩余高度的一张，黑框在卡片内部滚动 */
+.detail-card.log-card {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  overflow: hidden;
+}
+.detail-card.log-card .console {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+}
+
 .console {
   flex: 1 1 auto;
-  min-height: 140px;
-  max-height: 260px;
+  /* no fixed min-height: that pushed the black box below the card it belongs to */
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   background: color-mix(in srgb, var(--md-inverse-surface) 92%, var(--md-primary));
   border-radius: var(--shape-md);
@@ -413,9 +428,18 @@
 .engine-card:hover {
   background: color-mix(in srgb, var(--md-on-surface) 5%, transparent);
 }
+/* 选中（只是当前默认内核，未运行）：轻描边，不给强烈的填充色 */
 .engine-card.sel {
+  border-color: color-mix(in srgb, var(--md-primary) 55%, var(--md-outline-variant));
+  background: color-mix(in srgb, var(--md-primary) 4%, transparent);
+}
+/* 运行中：这才是真正的高亮状态 */
+.engine-card.running {
   border-color: var(--md-primary);
-  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+  background: color-mix(in srgb, var(--md-primary) 14%, transparent);
+}
+.engine-card.running .en {
+  color: var(--md-primary);
 }
 .engine-card .en {
   font-size: 13px;

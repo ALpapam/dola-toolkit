@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CoreId, EngineCapability, NodeDraft, NodeProtocol, TransportKind } from '@shared/types'
+import type { CoreId, EngineCapability, NodeDraft, NodeProtocol, ProxyNode, TransportKind } from '@shared/types'
 import { Button, Dialog, Field, IconButton, Select, Switch, TextInput } from '../../ui/controls'
 import { Icon } from '../../ui/Icon'
 import { toast } from '../../ui/toast'
@@ -10,6 +10,8 @@ interface Props {
   onClose: () => void
   engines: EngineCapability[]
   defaultEngine: CoreId
+  /** when set the dialog edits this node instead of creating a new one */
+  editing?: ProxyNode | null
   onSaved: () => void
 }
 
@@ -39,13 +41,47 @@ const emptyDraft = (engine: CoreId): NodeDraft => ({
   method: METHODS[0]
 })
 
-export function AddNodeDialog({ open, onClose, engines, defaultEngine, onSaved }: Props): JSX.Element {
+export function AddNodeDialog({ open, onClose, engines, defaultEngine, editing, onSaved }: Props): JSX.Element {
   const [draft, setDraft] = useState<NodeDraft>(() => emptyDraft(defaultEngine))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (open) setDraft(emptyDraft(defaultEngine))
-  }, [open, defaultEngine])
+    if (!open) return
+    if (editing) {
+      // edit mode: start from the node's current values so the user only has to
+      // change what they care about (name, pin, transport…)
+      setDraft({
+        name: editing.name,
+        protocol: editing.protocol,
+        engine: editing.engine,
+        server: editing.server,
+        port: editing.port,
+        uuid: editing.uuid,
+        password: editing.password,
+        method: editing.method,
+        flow: editing.flow,
+        security: editing.security,
+        sni: editing.sni,
+        alpn: editing.alpn,
+        fingerprint: editing.fingerprint,
+        pinSHA256: editing.pinSHA256,
+        allowInsecure: editing.allowInsecure,
+        publicKey: editing.publicKey,
+        shortId: editing.shortId,
+        spiderX: editing.spiderX,
+        network: editing.network,
+        path: editing.path,
+        host: editing.host,
+        serviceName: editing.serviceName,
+        obfs: editing.obfs,
+        obfsParam: editing.obfsParam,
+        upMbps: editing.upMbps,
+        downMbps: editing.downMbps
+      })
+    } else {
+      setDraft(emptyDraft(defaultEngine))
+    }
+  }, [open, defaultEngine, editing])
 
   const protoMeta = ALL_PROTOCOLS.find((p) => p.id === draft.protocol)
   const engineOk = protoMeta?.engines.includes(draft.engine) ?? true
@@ -78,7 +114,7 @@ export function AddNodeDialog({ open, onClose, engines, defaultEngine, onSaved }
     }
     setSaving(true)
     try {
-      await window.api.proxy.saveNode(draft)
+      await window.api.proxy.saveNode(editing ? { ...draft, id: editing.id } : draft)
       toast.success('节点已保存')
       onSaved()
     } catch (e) {
@@ -92,9 +128,9 @@ export function AddNodeDialog({ open, onClose, engines, defaultEngine, onSaved }
     <Dialog
       open={open}
       onClose={onClose}
-      title="添加节点"
-      subtitle="选择内核与协议，填入所需的连接信息"
-      icon="add"
+      title={editing ? `编辑节点 · ${editing.name}` : '添加节点'}
+      subtitle={editing ? '修改后保存即生效，正在使用时需要重新启动内核' : '选择内核与协议，填入所需的连接信息'}
+      icon={editing ? 'settings' : 'add'}
       width="wide"
       footer={
         <>
@@ -276,6 +312,19 @@ export function AddNodeDialog({ open, onClose, engines, defaultEngine, onSaved }
               value={draft.fingerprint ?? ''}
               onChange={(e) => set('fingerprint', e.target.value)}
             />
+            {/* Hysteria2 通常用自签证书，靠固定服务器公钥来建立信任 */}
+            {draft.protocol === 'hysteria2' || draft.protocol === 'tuic' ? (
+              <Field
+                label="证书公钥 PIN（pinSHA256）"
+                hint="分享链接里的 pinSHA256，64 位十六进制或 base64。留空则按系统证书校验；服务器更换证书后可在此更新"
+              >
+                <TextInput
+                  placeholder="64 位十六进制，或 base64（可留空）"
+                  value={draft.pinSHA256 ?? ''}
+                  onChange={(e) => set('pinSHA256', e.target.value)}
+                />
+              </Field>
+            ) : null}
             <TextInput
               label="Flow（VLESS）"
               placeholder="xtls-rprx-vision"

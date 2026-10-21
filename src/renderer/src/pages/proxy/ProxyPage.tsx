@@ -16,6 +16,8 @@ export function ProxyPage(): JSX.Element {
   const [results, setResults] = useState<Record<string, NodeTestResult>>({})
   const [busy, setBusy] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  /** node currently being edited; null = the dialog creates a new one */
+  const [editing, setEditing] = useState<ProxyNode | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [geoOpen, setGeoOpen] = useState(false)
   const [filter, setFilter] = useState('')
@@ -257,6 +259,15 @@ export function ProxyPage(): JSX.Element {
                         }}
                       />
                       <IconButton
+                        icon="settings"
+                        small
+                        label="修改节点设置"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditing(n)
+                        }}
+                      />
+                      <IconButton
                         icon="delete"
                         small
                         label="删除"
@@ -280,21 +291,26 @@ export function ProxyPage(): JSX.Element {
               {(['xray', 'mihomo', 'singbox'] as CoreId[]).map((id) => {
                 const cap = engines.find((e) => e.engine === id)
                 const st = state.engines.find((e) => e.engine === id)
-                const sel = state.activeEngine === id
+                const current = state.activeEngine === id
+                // Only a RUNNING core gets the filled highlight. Selection is a
+                // lighter outline: using the strong style for "selected" made the
+                // card look active before the proxy was ever started.
+                const running = st?.running === true
                 return (
                   <button
                     key={id}
-                    className={`engine-card ${sel ? 'sel' : ''}`}
+                    className={`engine-card ${running ? 'running' : ''} ${current && !running ? 'sel' : ''}`}
                     onClick={() => {
                       void window.api.settings.patch({ proxy: { defaultEngine: id } }).then(() => load())
                     }}
+                    title={current ? '当前使用的内核' : '点击切换内核'}
                   >
                     <div className="en">
                       {engineLabel(id)}
-                      {st?.running ? <span className="node-dot on" /> : null}
+                      {running ? <span className="node-dot on" /> : null}
                     </div>
                     <div className="ev">
-                      {cap?.available ? cap.version ?? '已就绪' : '未找到内核'}
+                      {running ? '运行中' : cap?.available ? cap.version ?? '已就绪' : '未找到内核'}
                     </div>
                   </button>
                 )
@@ -381,8 +397,10 @@ export function ProxyPage(): JSX.Element {
             </div>
           ) : null}
 
-          <div className="detail-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div className="hstack" style={{ marginBottom: 8 }}>
+          {/* 内核日志：卡片本身是 flex 容器，日志框必须作为它的子项并被其高度约束，
+              否则 .console 的 min-height 会把黑框顶到卡片外面 */}
+          <div className="detail-card log-card">
+            <div className="hstack" style={{ marginBottom: 8, flex: '0 0 auto' }}>
               <h4 style={{ margin: 0 }}>内核日志</h4>
               <span className="spacer" />
               <IconButton
@@ -414,12 +432,17 @@ export function ProxyPage(): JSX.Element {
       </div>
 
       <AddNodeDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
+        open={addOpen || editing !== null}
+        onClose={() => {
+          setAddOpen(false)
+          setEditing(null)
+        }}
         engines={engines}
         defaultEngine={state.activeEngine}
+        editing={editing}
         onSaved={() => {
           setAddOpen(false)
+          setEditing(null)
           void load()
         }}
       />
