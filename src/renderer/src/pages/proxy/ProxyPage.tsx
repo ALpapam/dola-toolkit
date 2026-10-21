@@ -250,21 +250,22 @@ export function ProxyPage(): JSX.Element {
                     </div>
                     <div className="row-actions">
                       <IconButton
+                        icon="settings"
+                        small
+                        label="修改节点设置"
+                        className="node-edit"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditing(n)
+                        }}
+                      />
+                      <IconButton
                         icon={testing[n.id] ? 'timer' : 'speed'}
                         small
                         label="测试延迟"
                         onClick={(e) => {
                           e.stopPropagation()
                           void testNode(n.id)
-                        }}
-                      />
-                      <IconButton
-                        icon="settings"
-                        small
-                        label="修改节点设置"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditing(n)
                         }}
                       />
                       <IconButton

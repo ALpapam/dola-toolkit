@@ -575,6 +575,39 @@ select.input {
   opacity: 1;
 }
 
+/*
+ * Node rows always show their actions.
+ *
+ * The rules above reveal actions only for `.row:hover` / `.row.selected`, but the
+ * proxy node list uses `.node-row` — so its buttons sat at opacity 0 forever and
+ * were invisible, which is exactly why the settings button "did not exist".
+ */
+.node-row .row-actions {
+  opacity: 1;
+}
+/* still keep them quiet until the row is hovered or active */
+.node-row .row-actions .btn-icon {
+  opacity: 0.6;
+  transition: opacity var(--dur-2) linear;
+}
+.node-row:hover .row-actions .btn-icon,
+.node-row.active .row-actions .btn-icon {
+  opacity: 1;
+}
+
+/*
+ * The settings (gear) button is the primary action on a node, so it is always
+ * fully visible — the other two stay dimmed until hover.
+ */
+.node-row .row-actions .btn-icon.node-edit {
+  opacity: 1;
+  color: var(--md-primary);
+  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+}
+.node-row .row-actions .btn-icon.node-edit:hover {
+  background: color-mix(in srgb, var(--md-primary) 20%, transparent);
+}
+
 /* ---------- Dialog ---------- */
 .scrim {
   position: fixed;
