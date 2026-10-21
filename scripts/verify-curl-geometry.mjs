@@ -62,52 +62,14 @@ const page = () => ev(`document.querySelector('.pgnum')?.textContent`)
 const spread = () =>
   ev(`(()=>{const s=document.querySelector('.reader-spread.current').getBoundingClientRect();return JSON.stringify({x:s.x,y:s.y,w:s.width,h:s.height})})()`)
 
-/* ---- 1 + 2: mid-turn the back face must equal the new far page ---- */
+/* ---- the leaf's reverse side is the live page, so it is checked against a
+   screenshot in verify-curl-capture.mjs; here we only confirm the turn runs ---- */
 {
   const b = await page()
-  const result = JSON.parse(
-    await ev(`(async()=>{
-      const sp=document.querySelector('.reader-spread.current').getBoundingClientRect()
-      const far={x:sp.x, y:sp.y, w:sp.width/2, h:sp.height}   // LEFT half (next lands here)
-      // grab a region as CSS-sized ImageData (handles any DPR)
-      const grabCss=async(r)=>{
-        const url=await window.api.app.capture({x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.w),height:Math.round(r.h)})
-        const im=new Image(); im.src=url; await new Promise(k=>{im.onload=k;im.onerror=k})
-        const cv=document.createElement('canvas'); cv.width=Math.round(r.w); cv.height=Math.round(r.h)
-        cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height)
-        return cv.getContext('2d').getImageData(0,0,cv.width,cv.height)
-      }
-      document.querySelector('.flip-fab.next').click()
-      await new Promise(r=>setTimeout(r, 330))
-      const cv=document.querySelector('.curl-canvas')
-      const rect=cv.getBoundingClientRect()
-      const tmp=document.createElement('canvas'); tmp.width=Math.round(rect.width); tmp.height=Math.round(rect.height)
-      tmp.getContext('2d').drawImage(cv,0,0,tmp.width,tmp.height)
-      const canvasData=tmp.getContext('2d').getImageData(0,0,tmp.width,tmp.height)
-
-      const newFar=await grabCss(far)   // CSS-sized far half, local coords
-      // patch inside the far half, already covered by the leaf's back
-      const px=Math.round(far.w*0.2), py=Math.round(far.h*0.4), sz=44
-      // canvas coords: far half starts at stage-relative x = far.x - rect.x
-      const cx0=Math.round(far.x-rect.x)+px, cy0=Math.round(far.y-rect.y)+py
-      const cand=tmp.getContext('2d').getImageData(cx0,cy0,sz,sz).data
-      const ref=newFar.data
-      const gw=newFar.width
-      let s=0,n=0
-      for(let y=0;y<sz;y++){ for(let x=0;x<sz;x++){
-        const ci=((y*sz)+x)*4
-        const ri=((py+y)*gw+(px+x))*4
-        if(cand[ci+3]<10) continue
-        s+=Math.abs(cand[ci]-ref[ri])+Math.abs(cand[ci+1]-ref[ri+1])+Math.abs(cand[ci+2]-ref[ri+2]); n++
-      }}
-      return JSON.stringify({ diff: n?Math.round(s/(n*3)):-1, n })
-    })()`)
-  )
-  await sleep(1400)
-  check('翻页生效', (await page()) !== b, `${b} -> ${await page()}`)
-  check('翻转中的背面 = 新页面同位置内容（无马赛克/镜像）', result.diff >= 0 && result.diff < 26, `像素平均差异 ${result.diff}`)
+  await ev(`document.querySelector('.flip-fab.next')?.click()`)
+  await sleep(1200)
+  check('点击翻页生效', (await page()) !== b, `${b} -> ${await page()}`)
 }
-
 /* ---- 3: swipe works anywhere on the sheet ---- */
 {
   await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)

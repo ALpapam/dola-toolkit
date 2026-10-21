@@ -1,8 +1,8 @@
-// Verifies the two symptoms the console revealed:
-//   1. the "blank snapshot" guard must NOT fire on ordinary pages (it was
-//      misfiring because contrast was measured on a 64x64 downscale)
-//   2. the reverse side of the leaf must be the real far page, not the plain
-//      paper colour — i.e. no light-purple blank during the turn
+// Verifies the two symptoms the console revealed, updated for the new design:
+//   1. the "blank snapshot" guard must NOT fire on ordinary pages
+//   2. while the leaf sweeps, the area it has passed over must show the NEW page
+//      on screen (the leaf's reverse side is now the live page, not a captured
+//      image, so a screenshot is compared rather than the canvas contents)
 const PORT = Number(process.env.CDP_PORT ?? 9331)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()
@@ -59,59 +59,50 @@ await sleep(3800)
 await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)
 await sleep(1300)
 
-const page = () => ev(`document.querySelector('.pgnum')?.textContent`)
-logs.length = 0
-
 /* ---- 1. ordinary turns must not fall back ---- */
+logs.length = 0
 for (let i = 0; i < 6; i++) {
-  if (i === 3) {
-    // half way, go back so we exercise both directions
-    await ev(`document.querySelector('.flip-fab.prev')?.click()`)
-  } else {
-    await ev(`document.querySelector('.flip-fab.next')?.click()`)
-  }
+  await ev(`document.querySelector('.flip-fab.${i === 3 ? 'prev' : 'next'}')?.click()`)
   await sleep(900)
 }
-const fallbacks = logs.filter((l) => l.includes('fallback') || l.includes('empty snapshot') || l.includes('blank snapshot'))
+const fallbacks = logs.filter((l) => l.includes('fallback') || l.includes('snapshot'))
 check('普通页面翻页不再误判空白', fallbacks.length === 0, `警告 ${fallbacks.length} 条`)
 
-/* ---- 2. the reverse side shows the far page, not the paper colour ---- */
-logs.length = 0
+/* ---- 2. no early content jump + the swept area shows the new page ---- */
 await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)
 await sleep(1500)
-const probe = JSON.parse(
+const geo = JSON.parse(
+  await ev(`(()=>{const s=document.querySelector('.reader-spread.current').getBoundingClientRect();return JSON.stringify({x:s.x,y:s.y,w:s.width,h:s.height})})()`)
+)
+// capture the new far page (LEFT half) as the reference, right after the turn starts
+const started = Date.now()
+await ev(`document.querySelector('.flip-fab.next')?.click()`)
+await sleep(300) // ~2/3 through the turn: the leaf has swept well past the gutter
+const midShot = await send('Page.captureScreenshot', { format: 'png' })
+await sleep(1000)
+const refShot = await send('Page.captureScreenshot', { format: 'png' })
+
+const cmp = JSON.parse(
   await ev(`(async()=>{
-    const sp=document.querySelector('.reader-spread.current').getBoundingClientRect()
-    const far={x:sp.x,y:sp.y,w:sp.width/2,h:sp.height}
-    const grabCss=async(r)=>{
-      const url=await window.api.app.capture({x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.w),height:Math.round(r.h)})
-      const im=new Image(); im.src=url; await new Promise(k=>{im.onload=k;im.onerror=k})
-      const cv=document.createElement('canvas'); cv.width=Math.round(r.w); cv.height=Math.round(r.h)
-      cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height)
-      return cv.getContext('2d').getImageData(0,0,cv.width,cv.height)
-    }
-    document.querySelector('.flip-fab.next').click()
-    await new Promise(r=>setTimeout(r, 340))
-    const cv=document.querySelector('.curl-canvas')
-    const rect=cv.getBoundingClientRect()
-    const tmp=document.createElement('canvas'); tmp.width=Math.round(rect.width); tmp.height=Math.round(rect.height)
-    tmp.getContext('2d').drawImage(cv,0,0,tmp.width,tmp.height)
-    const newFar=await grabCss(far)
-    const px=Math.round(far.w*0.2), py=Math.round(far.h*0.4), sz=44
-    const cx0=Math.round(far.x-rect.x)+px, cy0=Math.round(far.y-rect.y)+py
-    const cand=tmp.getContext('2d').getImageData(cx0,cy0,sz,sz).data
-    const ref=newFar.data, gw=newFar.width
+    const load=async(b64)=>{ const im=new Image(); im.src='data:image/png;base64,'+b64; await new Promise(k=>{im.onload=k;im.onerror=k}); return im }
+    const mid=await load(${JSON.stringify(midShot.data)})
+    const ref=await load(${JSON.stringify(refShot.data)})
+    const dpr=mid.naturalWidth/window.innerWidth
+    const sp={x:${Math.round(geo.x)},y:${Math.round(geo.y)},w:${Math.round(geo.w)},h:${Math.round(geo.h)}}
+    // far half = LEFT half; sample close to the gutter, which the leaf covers early
+    const px=Math.round((sp.x+sp.w*0.5-sp.w*0.5*0.18)*dpr)
+    const py=Math.round((sp.y+sp.h*0.42)*dpr)
+    const sz=Math.round(48*dpr)
+    const grab=(im)=>{ const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight
+      const g=c.getContext('2d'); g.drawImage(im,0,0); return g.getImageData(px,py,sz,sz).data }
+    const a=grab(mid), b=grab(ref)
     let s=0,n=0
-    for(let y=0;y<sz;y++){ for(let x=0;x<sz;x++){
-      const ci=((y*sz)+x)*4, ri=((py+y)*gw+(px+x))*4
-      if(cand[ci+3]<10) continue
-      s+=Math.abs(cand[ci]-ref[ri])+Math.abs(cand[ci+1]-ref[ri+1])+Math.abs(cand[ci+2]-ref[ri+2]); n++
-    }}
-    return JSON.stringify({diff: n?Math.round(s/(n*3)):-1, n})
+    for(let i=0;i<a.length;i+=4){ s+=Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2]); n++ }
+    return JSON.stringify({diff: Math.round(s/(n*3))})
   })()`)
 )
-await sleep(1200)
-check('背面 = 新页面同位置内容（无淡紫空白）', probe.diff >= 0 && probe.diff < 30, `像素差异 ${probe.diff}`)
+check('翻动中已扫过的区域显示的是新页面', cmp.diff < 24, `与翻完后的画面差异 ${cmp.diff}`)
+check('翻页耗时正常（无长时间空白等待）', Date.now() - started < 2500)
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`)
 ws.close()

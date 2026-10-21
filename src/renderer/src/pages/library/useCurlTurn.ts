@@ -251,21 +251,6 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
     [stageRef]
   )
 
-  /**
-   * The reverse side of the leaf: the far half AFTER the content advanced.
-   * For `next` that is the new spread's LEFT page (it becomes the back of the
-   * sheet that just turned); for `prev` it is the new spread's RIGHT page.
-   */
-  const captureBack = useCallback(
-    async (geo: { sheet: Rect; base: Rect | null }): Promise<{ img: HTMLImageElement | null; rect: Rect | null }> => {
-      const stage = stageRef.current
-      if (!stage || !geo.base) return { img: null, rect: null }
-      const st = stage.getBoundingClientRect()
-      const r = { x: st.left + geo.base.x, y: st.top + geo.base.y, width: geo.base.w, height: geo.base.h }
-      return { img: await snapshot(r), rect: geo.base }
-    },
-    [stageRef, snapshot]
-  )
 
   /** rAF loop that advances `progress` from `from` to `to`. */
   const animate = useCallback(
@@ -329,29 +314,28 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       busy.current = true
       setPlaying(true)
       try {
-        // 1. the leaf's front (as it looks now)
-        // 2. advance the content and let it paint
-        // 3. capture the far half — that is the leaf's printed reverse side
-        // 4. bend the leaf over the already-rendered new page
+        /*
+         * 1. snapshot the page while it is still the old one — nothing moves yet
+         * 2. advance the content
+         * 3. start turning IMMEDIATELY
+         *
+         * Step 3 is what removes the "content jumps, then the animation plays"
+         * delay: there is no second screenshot any more. The leaf's front comes
+         * from step 1 and its reverse side is simply the live new page showing
+         * through the canvas, so nothing has to be captured after the advance.
+         */
         await settleImages(stageRef.current ? resolvePaper(stageRef.current) : null)
         const front = await snapshot()
         if (!front) {
-          /*
-           * No snapshot (capture refused, DPI/scale mismatch, headless GPU…).
-           * Drawing the curl with no page image would show a blank sheet of
-           * paper, so fall back to a transform-only turn that always keeps the
-           * real DOM text visible.
-           */
           console.warn('[curl] snapshot unavailable — using DOM fallback turn')
           await domFallbackTurn(dir)
           return
         }
-        renderer.setLayers(front, null, geo.sheet, geo.base, geo.base)
+        renderer.setLayers(front, geo.sheet, geo.base)
         optsRef.current.onAdvance(dir)
-        await nextPaint()
-        await settleImages(stageRef.current ? resolvePaper(stageRef.current) : null)
-        const back = await captureBack(geo)
-        renderer.setLayers(front, back.img, geo.sheet, geo.base, back.rect)
+        // draw the flat old spread this frame so the new content never shows
+        // before the leaf starts moving
+        renderer.render({ progress: 0, dir })
         await animate(dir, 0, 1, TURN_DURATION)
       } finally {
         renderer.clear()
@@ -359,7 +343,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         setPlaying(false)
       }
     },
-    [enabled, layout, snapshot, captureBack, animate, domFallbackTurn, settleImages]
+    [enabled, layout, snapshot, animate, domFallbackTurn, settleImages]
   )
 
   const onPointerDown = useCallback(
@@ -389,11 +373,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       // snapshot starts now; it is an async IPC round-trip
       const snapPromise = snapshot()
       let snapReady: HTMLImageElement | null = null
-      let backReady: HTMLImageElement | null = null
-      let backRect: Rect | null = geo.base
       let advanced = false
-      /** true once we may paint: the reverse side must be captured first */
-      let ready = false
       let moved = false
       let progress = 0
 
@@ -402,8 +382,8 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       })
 
       const paint = (): void => {
-        if (!ready || !snapReady) return
-        renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
+        if (!snapReady) return
+        renderer.setLayers(snapReady, geo.sheet, geo.base)
         renderer.render({ progress, dir })
       }
 
@@ -412,23 +392,13 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         if (!moved && Math.abs(dx) < SLOP_PX) return
         if (!moved) {
           moved = true
-          optsRef.current.onAdvance(dir)
-          advanced = true
-          /*
-           * Capture the reverse side BEFORE painting the base patch: once the
-           * base is on the canvas it would be part of the screenshot and the
-           * leaf's back would show the OLD page. Painting is therefore held
-           * for the duration of that one capture (~60-120ms) — imperceptible
-           * at the start of a drag, and it keeps the back face correct.
-           */
-          void (async () => {
-            await nextPaint()
-            const back = await captureBack(geo)
-            backReady = back.img
-            backRect = back.rect
-            ready = true
+          // commit the moment the gesture is real: the leaf's reverse side is
+          // the live new page, so nothing needs to be captured afterwards
+          void snapPromise.then(() => {
+            optsRef.current.onAdvance(dir)
+            advanced = true
             paint()
-          })()
+          })
         }
         const signed = dir === 'next' ? -dx : dx
         progress = Math.max(0, Math.min(1, signed / dist))
@@ -452,11 +422,12 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         setPlaying(true)
         void (async () => {
           try {
-            await nextPaint()
-            // Wait for the front snapshot; the back may still be in flight and
-            // will simply pop in mid-turn (paper until then).
             if (!snapReady) snapReady = await snapPromise
-            renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
+            if (!advanced) {
+              optsRef.current.onAdvance(dir)
+              advanced = true
+            }
+            renderer.setLayers(snapReady, geo.sheet, geo.base)
             await animate(dir, progress, commit ? 1 : 0, commit ? TURN_DURATION : 300)
             if (!commit && advanced) {
               // put the page back: the content had already moved
@@ -475,7 +446,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [enabled, stageRef, layout, snapshot, captureBack, animate, threshold, settleImages]
+    [enabled, stageRef, layout, snapshot, animate, threshold, settleImages]
   )
 
   return { playing, play, onPointerDown }

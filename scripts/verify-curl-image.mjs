@@ -103,7 +103,9 @@ const content = JSON.parse(
   })()`)
 )
 await sleep(1200)
-check('翻转中画布有内容（非纯色纸）', content.opaque > 3000 && content.sd > 4, `不透明像素 ${content.opaque}，对比度 ${content.sd}`)
+// the leaf's reverse side is the live page (left transparent on the canvas), so
+// only the front face contributes canvas pixels — assert it is really painted
+check('翻转中正面纸页已绘制', content.opaque > 3000, `不透明像素 ${content.opaque}`)
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`)
 ws.close()

@@ -12,14 +12,23 @@
 //   integrating the angles, so the free edge lags and the sheet arcs:
 //       q(u) = ∫ cos θ ds
 //       next: screen x = hingeX + q        prev: screen x = hingeX - q
-//   p = 0 → leaf flat in its own half; p = 1 → leaf has landed on the far half.
+//   p = 0 → leaf flat over its own half; p = 1 → landed on the far half.
 //
-//   FACES. While cos θ > 0 you look at the leaf's front (the page as it is now).
-//   Past edge-on you look at its reverse side, which is a different page: the
-//   one that ends up on the far half. That page is sampled straight from the
-//   post-advance snapshot of the far half at the SAME screen position, so the
-//   last frame is pixel-identical to the live page and the hand-off is seamless
-//   — no mirroring, no scrambling.
+// FACES — and why only ONE screenshot is needed:
+//
+//   · The FRONT face (cos θ > 0) is the page as it looked before the turn, so
+//     it is drawn from a snapshot taken BEFORE the content advanced. That
+//     snapshot is taken while the page is unchanged, so it never causes a
+//     visible jump.
+//   · The BACK face (cos θ < 0) is the printed reverse side, which is exactly
+//     the page that now sits on the far half — already rendered in the DOM.
+//     So it is simply LEFT TRANSPARENT and the live page shows through, with a
+//     faint shadow to sell the paper. No second screenshot, which removes both
+//     the "content jumps before the animation" gap and the grey blank sheet
+//     that appeared when that capture was slow or rejected.
+//   · The half not yet reached by the leaf is painted from the pre-turn
+//     snapshot, CLIPPED to the area the leaf has not covered, so it stays on
+//     the old content until the sheet sweeps over it.
 //
 // Shading is applied once to the finished shape (multi-stop gradient), never
 // per slice, so there are no vertical seams.
@@ -52,7 +61,6 @@ export interface Rect {
 }
 
 const PAPER_FRONT: [number, number, number] = [255, 251, 254]
-const PAPER_BACK: [number, number, number] = [234, 228, 237]
 
 export class PageCurlRenderer {
   private canvas: HTMLCanvasElement
@@ -60,12 +68,9 @@ export class PageCurlRenderer {
   private dpr = 1
   private quality: CurlQuality = CURL_QUALITY.high
 
-  /** the leaf front: snapshot of the page as it was before the turn */
+  /** the leaf front: snapshot taken BEFORE the content advanced */
   private front: HTMLImageElement | null = null
-  /** the reverse side: the far half AFTER the content advanced */
-  private back: HTMLImageElement | null = null
-  private backRect: Rect | null = null
-  /** the half the leaf still covers — kept on the old content */
+  /** the half the leaf still covers — stays on the old content, clipped */
   private base: Rect | null = null
   /** the turning half, canvas coordinates */
   private sheet: Rect = { x: 0, y: 0, w: 0, h: 0 }
@@ -88,23 +93,10 @@ export class PageCurlRenderer {
     this.quality = q
   }
 
-  setLayers(
-    front: HTMLImageElement | null,
-    back: HTMLImageElement | null,
-    sheet: Rect,
-    base: Rect | null,
-    backRect: Rect | null
-  ): void {
+  setLayers(front: HTMLImageElement | null, sheet: Rect, base: Rect | null): void {
     this.front = front
-    this.back = back
-    this.backRect = backRect
     this.sheet = sheet
     this.base = base
-  }
-
-  setBack(img: HTMLImageElement | null, rect: Rect | null): void {
-    this.back = img
-    this.backRect = rect
   }
 
   resize(cssWidth: number, cssHeight: number, dpr: number): void {
@@ -131,13 +123,23 @@ export class PageCurlRenderer {
     return this.canvas.height / this.dpr
   }
 
-  /** The half the leaf has not reached yet stays on the pre-turn content. */
-  private drawBase(): void {
-    const { ctx, front, base } = this
-    if (!front || !base || front.naturalWidth === 0) return
+  /**
+   * Paints part of the pre-turn snapshot.
+   * @param clip optional sub-rectangle of `rect` that may be drawn
+   */
+  private blitSnap(rect: Rect, clip?: Rect): void {
+    const { ctx, front } = this
+    if (!front || front.naturalWidth === 0) return
     const kx = front.naturalWidth / this.cssW()
     const ky = front.naturalHeight / this.cssH()
-    ctx.drawImage(front, base.x * kx, base.y * ky, base.w * kx, base.h * ky, base.x, base.y, base.w, base.h)
+    ctx.save()
+    if (clip) {
+      ctx.beginPath()
+      ctx.rect(clip.x, clip.y, Math.max(0, clip.w), Math.max(0, clip.h))
+      ctx.clip()
+    }
+    ctx.drawImage(front, rect.x * kx, rect.y * ky, rect.w * kx, rect.h * ky, rect.x, rect.y, rect.w, rect.h)
+    ctx.restore()
   }
 
   render(frame: CurlFrame): void {
@@ -155,43 +157,55 @@ export class PageCurlRenderer {
     const dir = frame.dir
     const strips = this.quality.strips
 
-    // ---- covered half: old content
-    ctx.save()
-    ctx.scale(this.dpr, this.dpr)
-    this.drawBase()
-    ctx.restore()
-
-    // ---- bend the leaf into an offscreen buffer, unshaded
-    oc.setTransform(1, 0, 0, 1, 0, 0)
-    oc.clearRect(0, 0, this.off.width, this.off.height)
-    oc.save()
-    oc.scale(this.dpr, this.dpr)
-
     const hingeX = dir === 'next' ? S.x : S.x + W
     const total = Math.PI * p
+    // the free edge curls further than the hinge — that is what makes paper arc
     const CURL = 0.46 * Math.sin(Math.PI * Math.min(1, p * 1.05))
 
     const step = 1 / strips
     const q = new Float64Array(strips + 1)
     const ang = new Float64Array(strips + 1)
     let cursor = 0
+    let qMin = 0
     for (let i = 0; i <= strips; i++) {
       const t = i / strips
       const a = total + CURL * Math.pow(t, 1.7)
       ang[i] = a
       q[i] = cursor
+      if (cursor < qMin) qMin = cursor
       cursor += Math.cos(a) * step * W
     }
+
+    /* ---- 1. the half not yet reached: old content, clipped to the part the
+       leaf has NOT covered. Past the leaf's leading edge the live (new) page
+       must show, because that area is the leaf's reverse side. */
+    ctx.save()
+    ctx.scale(this.dpr, this.dpr)
+    if (this.base) {
+      const lead = hingeX + qMin // leftmost point reached by the leaf (next)
+      if (dir === 'next') {
+        const baseRight = this.base.x + this.base.w
+        const uncoverW = Math.min(baseRight, lead) - this.base.x
+        if (uncoverW > 0.5) this.blitSnap(this.base, { x: this.base.x, y: S.y, w: uncoverW, h: H })
+      } else {
+        const leadRight = hingeX - qMin
+        const uncoverX = Math.max(this.base.x, leadRight)
+        const uncoverW = this.base.x + this.base.w - uncoverX
+        if (uncoverW > 0.5) this.blitSnap(this.base, { x: uncoverX, y: S.y, w: uncoverW, h: H })
+      }
+    }
+    ctx.restore()
+
+    /* ---- 2. bend the leaf front into an offscreen buffer (unshaded) */
+    oc.setTransform(1, 0, 0, 1, 0, 0)
+    oc.clearRect(0, 0, this.off.width, this.off.height)
+    oc.save()
+    oc.scale(this.dpr, this.dpr)
 
     const cssW = this.cssW()
     const cssH = this.cssH()
     const fkx = (this.front?.naturalWidth ?? 1) / cssW
     const fky = (this.front?.naturalHeight ?? 1) / cssH
-    const far = this.backRect
-    const farX = far?.x ?? S.x
-    const farY = far?.y ?? S.y
-    const bkx = (this.back?.naturalWidth ?? 1) / Math.max(1, far?.w ?? W)
-    const bky = (this.back?.naturalHeight ?? 1) / Math.max(1, far?.h ?? H)
 
     for (let i = 0; i < strips; i++) {
       const u0 = (i / strips) * W
@@ -199,13 +213,13 @@ export class PageCurlRenderer {
       const du = u1 - u0
       if (du <= 0) continue
       const a = ang[i]
+      // reverse side: leave it transparent so the live new page shows through
+      if (Math.cos(a) < 0) continue
       const q0 = q[i]
       const q1 = q[i + 1]
       const dw = q1 - q0
       if (Math.abs(dw) < 0.001) continue
-      const isBack = Math.cos(a) < 0
 
-      // where this slice sits on screen
       const s0 = dir === 'next' ? hingeX + q0 : hingeX - q0
       const s1 = dir === 'next' ? hingeX + q1 : hingeX - q1
       const left = Math.min(s0, s1)
@@ -215,56 +229,24 @@ export class PageCurlRenderer {
       oc.beginPath()
       oc.rect(left, S.y, width, H)
       oc.clip()
-
-      if (isBack) {
-        /*
-         * Reverse side: sample the post-advance far half at the SAME screen
-         * position. At p = 1 this reproduces the live page exactly, so the
-         * animation hands over to the DOM without any visual jump, and there is
-         * nothing to mirror (a mirrored sample was what produced the garbled,
-         * slice-shuffled look before).
-         */
-        if (this.back && this.back.naturalWidth > 0) {
-          oc.drawImage(
-            this.back,
-            (left - farX) * bkx,
-            (S.y - farY) * bky,
-            Math.max(0.5, width * bkx),
-            H * bky,
-            left,
-            S.y,
-            width,
-            H
-          )
+      if (this.front && this.front.naturalWidth > 0) {
+        const srcX = (S.x + u0) * fkx
+        const srcW = Math.max(0.5, du * fkx)
+        if (dir === 'next') {
+          oc.drawImage(this.front, srcX, S.y * fky, srcW, H * fky, left, S.y, width, H)
         } else {
-          oc.fillStyle = `rgb(${PAPER_BACK[0]},${PAPER_BACK[1]},${PAPER_BACK[2]})`
-          oc.fillRect(left, S.y, width, H)
+          oc.translate(left + width, 0)
+          oc.scale(-1, 1)
+          oc.drawImage(this.front, srcX, S.y * fky, srcW, H * fky, 0, S.y, width, H)
         }
       } else {
-        /*
-         * Front face: sample the leaf along u from the hinge.
-         *   next: u grows with x, so the slice is drawn un-flipped
-         *   prev: u grows against x, so the slice is mirrored about itself
-         */
-        if (this.front && this.front.naturalWidth > 0) {
-          const srcX = (S.x + u0) * fkx
-          const srcW = Math.max(0.5, du * fkx)
-          if (dir === 'next') {
-            oc.drawImage(this.front, srcX, S.y * fky, srcW, H * fky, left, S.y, width, H)
-          } else {
-            oc.translate(left + width, 0)
-            oc.scale(-1, 1)
-            oc.drawImage(this.front, srcX, S.y * fky, srcW, H * fky, 0, S.y, width, H)
-          }
-        } else {
-          oc.fillStyle = `rgb(${PAPER_FRONT[0]},${PAPER_FRONT[1]},${PAPER_FRONT[2]})`
-          oc.fillRect(left, S.y, width, H)
-        }
+        oc.fillStyle = `rgb(${PAPER_FRONT[0]},${PAPER_FRONT[1]},${PAPER_FRONT[2]})`
+        oc.fillRect(left, S.y, width, H)
       }
       oc.restore()
     }
 
-    // ---- shade the finished shape ONCE (no per-slice seams)
+    /* ---- 3. shade the front shape once (no per-slice seams) */
     const gx0 = dir === 'next' ? hingeX : hingeX - W
     const gx1 = dir === 'next' ? hingeX - W : hingeX + W
     const grad = oc.createLinearGradient(gx0, 0, gx1, 0)
@@ -273,11 +255,9 @@ export class PageCurlRenderer {
       const t = k / stops
       const i = Math.min(strips, Math.round(t * strips))
       const facing = Math.abs(Math.cos(ang[i]))
-      const isBack = Math.cos(ang[i]) < 0
-      const alpha = isBack ? 0.12 + 0.28 * (1 - facing) : 0.32 * (1 - facing)
-      const tint = isBack ? '94,84,102' : '0,0,0'
+      const alpha = 0.32 * (1 - facing)
       const stop = dir === 'next' ? 1 - t : t
-      grad.addColorStop(Math.max(0, Math.min(1, stop)), `rgba(${tint},${alpha.toFixed(3)})`)
+      grad.addColorStop(Math.max(0, Math.min(1, stop)), `rgba(0,0,0,${alpha.toFixed(3)})`)
     }
     oc.globalCompositeOperation = 'source-atop'
     oc.fillStyle = grad
@@ -295,7 +275,7 @@ export class PageCurlRenderer {
     oc.globalCompositeOperation = 'source-over'
     oc.restore()
 
-    // ---- shadow onto the page underneath, then blit the leaf
+    /* ---- 4. shadow cast by the leaf onto the page underneath, then the leaf */
     ctx.save()
     ctx.scale(this.dpr, this.dpr)
     if (this.quality.shadow && p < 0.985) {
@@ -310,26 +290,26 @@ export class PageCurlRenderer {
       ctx.fillStyle = g
       ctx.fillRect(Math.min(hingeX, edge), S.y, Math.abs(edge - hingeX), H)
     }
+    // the reverse side: only a faint tint, so the new page behind stays legible
+    const backSpan = dir === 'next' ? hingeX - (hingeX + qMin) : hingeX - qMin - hingeX
+    const backX = dir === 'next' ? hingeX + qMin : hingeX
+    if (backSpan > 1) {
+      ctx.fillStyle = `rgba(90,80,98,${0.06 + 0.06 * Math.sin(Math.PI * p)})`
+      ctx.fillRect(backX, S.y, backSpan, H)
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(this.off, 0, 0)
     ctx.restore()
   }
 
-  /** p = 0: the leaf flat in its own half, straight from `front`. */
+  /** p = 0: the leaf flat over its own half — full coverage of the old spread. */
   private paintFlat(): void {
-    const { ctx, front } = this
+    const { ctx } = this
     const S = this.sheet
     ctx.save()
     ctx.scale(this.dpr, this.dpr)
-    this.drawBase()
-    if (front && front.naturalWidth > 0) {
-      const kx = front.naturalWidth / this.cssW()
-      const ky = front.naturalHeight / this.cssH()
-      ctx.drawImage(front, S.x * kx, S.y * ky, S.w * kx, S.h * ky, S.x, S.y, S.w, S.h)
-    } else {
-      ctx.fillStyle = `rgb(${PAPER_FRONT[0]},${PAPER_FRONT[1]},${PAPER_FRONT[2]})`
-      ctx.fillRect(S.x, S.y, S.w, S.h)
-    }
+    if (this.base) this.blitSnap(this.base)
+    this.blitSnap(S)
     ctx.restore()
   }
 }
