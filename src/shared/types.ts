@@ -231,6 +231,14 @@ export interface ProxyNode {
   sni?: string
   alpn?: string
   fingerprint?: string
+  /**
+   * SHA-256 of the server certificate's public key (Hysteria2 pinSHA256).
+   * Servers that present a self-signed certificate are only reachable when
+   * this is supplied — without it the TLS handshake is rejected.
+   */
+  pinSHA256?: string
+  /** skip certificate verification for this node (self-signed servers) */
+  allowInsecure?: boolean
   publicKey?: string
   shortId?: string
   spiderX?: string
@@ -267,6 +275,14 @@ export interface NodeDraft {
   sni?: string
   alpn?: string
   fingerprint?: string
+  /**
+   * SHA-256 of the server certificate's public key (Hysteria2 pinSHA256).
+   * Servers that present a self-signed certificate are only reachable when
+   * this is supplied — without it the TLS handshake is rejected.
+   */
+  pinSHA256?: string
+  /** skip certificate verification for this node (self-signed servers) */
+  allowInsecure?: boolean
   publicKey?: string
   shortId?: string
   spiderX?: string

@@ -93,7 +93,8 @@ function xrayStream(n: ProxyNode): XrayStream {
     } else {
       const tlsSettings: Record<string, unknown> = {
         serverName: sni,
-        allowInsecure: false,
+        // per-node override for servers with self-signed / rotated certificates
+        allowInsecure: n.allowInsecure === true,
         fingerprint: str(n.fingerprint)
       }
       const alpn = alpnList(n)
@@ -298,17 +299,51 @@ export function xrayGeoEnv(geoDirPath: string): Record<string, string> {
 // sing-box
 // ===========================================================================
 
+/**
+ * Hysteria2 pins are written in hex in share links, while sing-box wants the
+ * same 32 bytes as base64 (certificate_public_key_sha256). Values that are
+ * already base64 are passed through untouched.
+ */
+function pinToBase64(raw: string): string {
+  const v = raw.trim()
+  if (!v) return ''
+  const hex = v.replace(/[^0-9a-fA-F]/g, '')
+  if (/^[0-9a-fA-F]{64}$/.test(hex)) {
+    const bytes = Buffer.from(hex, 'hex')
+    return bytes.toString('base64')
+  }
+  return v
+}
+
 function sbTls(n: ProxyNode): Record<string, unknown> | undefined {
   if (!isTls(n)) return undefined
+  const insecure = n.allowInsecure === true
   const tls: Record<string, unknown> = {
     enabled: true,
     server_name: str(n.sni) || str(n.host) || str(n.server),
-    insecure: false
+    // per-node override: Hysteria2 servers with self-signed certificates, or a
+    // share link whose pin no longer matches the server
+    insecure
   }
   const fp = str(n.fingerprint)
   if (fp) tls.utls = { enabled: true, fingerprint: fp }
   const alpn = alpnList(n)
   if (alpn.length) tls.alpn = alpn
+  /*
+   * Hysteria2 servers usually present a self-signed certificate and tell the
+   * client to trust it by pinning the server's public key: `pinSHA256` in the
+   * share link (hex), `certificate_public_key_sha256` in sing-box (base64).
+   * Two traps here:
+   *   · the hex was copied over verbatim, which can never match — sing-box
+   *     decodes that string as base64 and compares a different digest;
+   *   · sing-box enforces the pin even when `insecure` is true, so a stale pin
+   *     still breaks the handshake. The pin is therefore only emitted when the
+   *     user has not opted out of verification.
+   */
+  if (!insecure) {
+    const pin = pinToBase64(str(n.pinSHA256))
+    if (pin) tls.certificate_public_key_sha256 = [pin]
+  }
   if (str(n.security) === 'reality') {
     tls.reality = {
       enabled: true,

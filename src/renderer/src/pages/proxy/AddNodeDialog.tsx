@@ -286,6 +286,20 @@ export function AddNodeDialog({ open, onClose, engines, defaultEngine, onSaved }
         </>
       ) : null}
 
+      {/* 跳过证书校验：自签证书的 Hysteria2 节点，或分享链接里的 pin 已过期时使用 */}
+      <div className="field-row" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 500 }}>跳过证书校验</div>
+          <div className="tiny muted">
+            服务器使用自签证书，或提示「证书公钥不匹配」时打开。开启后不再校验证书，安全性降低
+          </div>
+        </div>
+        <Switch
+          checked={draft.allowInsecure === true}
+          onChange={(v) => set('allowInsecure', v)}
+        />
+      </div>
+
       {!engineOk ? (
         <div className="tiny" style={{ color: 'var(--md-error)' }}>
           当前协议不支持所选内核，请切换内核。

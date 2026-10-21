@@ -54,6 +54,19 @@ import {
 import { getDataDir, getProxyStore, getSettings, patchProxyStore } from '../store'
 
 const LOG_LIMIT = 400
+/**
+ * Absolute path to reg.exe.
+ *
+ * The Electron main process can inherit a PATH without System32 (portable exe,
+ * launched from a minimal shell), in which case spawn('reg.exe') fails with
+ * ENOENT and the system proxy silently never gets applied.
+ */
+function regExe(): string {
+  const root = process.env['SystemRoot'] || process.env['windir'] || 'C:\\Windows'
+  const abs = join(root, 'System32', 'reg.exe')
+  return existsSync(abs) ? abs : 'reg.exe'
+}
+
 const REG_INTERNET = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 const TEST_TIMEOUT = 8000
 const HEALTH_TIMEOUT = 8000
@@ -106,6 +119,8 @@ export class ProxyManager {
   private readonly intentionalStop = new Set<CoreId>()
   /** set when the last start failed because the port was already taken */
   private recentPortClash = false
+  /** log count at the start of the last node test, per engine */
+  private logCursor = new Map<CoreId, number>()
   private testPortCursor = 18080
   /** user's own proxy settings, captured before we enable ours */
   private previousProxy: { enable: boolean; server: string | null; override: string | null } | null = null
@@ -861,6 +876,13 @@ export class ProxyManager {
         return true
       }
       ok = await this.regWrite(key, 'ProxyEnable', 'REG_DWORD', '0')
+      if (!this.previousProxy) {
+        // no snapshot to restore: make sure we are not still pointing at our port
+        const after = await this.readProxySnapshot()
+        if (after?.enable && after.server === `127.0.0.1:${port}`) {
+          await this.regWrite(key, 'ProxyEnable', 'REG_DWORD', '0')
+        }
+      }
       if (ok && this.previousProxy) {
         // put the user's original proxy back exactly as it was
         await this.regWrite(key, 'ProxyEnable', 'REG_DWORD', this.previousProxy.enable ? '1' : '0')
@@ -871,11 +893,24 @@ export class ProxyManager {
           await this.regWrite(key, 'ProxyOverride', 'REG_SZ', this.previousProxy.override)
         }
         this.previousProxy = null
+        /*
+         * Safety net.
+         *
+         * If the restore above left the machine still pointing at OUR port while
+         * enabled (snapshot incomplete, or a partial write), turning the proxy
+         * off must not leave the user without internet. Only our own port is
+         * forced off — a proxy the user configured themselves is left alone.
+         */
+        const after = await this.readProxySnapshot()
+        if (after?.enable && after.server === `127.0.0.1:${port}`) {
+          await this.regWrite(key, 'ProxyEnable', 'REG_DWORD', '0')
+        }
       }
     }
     if (ok) await notifyInternetSettingsChanged()
-    // remember the last state we successfully requested
-    this.systemProxyOn = on
+    // Only remember a state we actually achieved — otherwise the UI claims the
+    // system proxy is on while the registry still points somewhere else.
+    this.systemProxyOn = ok ? on : this.systemProxyOn
     this.persist()
     this.emitState()
     return ok
@@ -889,7 +924,7 @@ export class ProxyManager {
   } | null> {
     return new Promise((resolve) => {
       try {
-        const child = spawn('reg.exe', ['query', REG_INTERNET], {
+        const child = spawn(regExe(), ['query', REG_INTERNET], {
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'ignore']
         })
@@ -926,7 +961,7 @@ export class ProxyManager {
   ): Promise<boolean> {
     return new Promise((resolve) => {
       try {
-        const child = spawn('reg.exe', ['add', key, '/v', name, '/t', type, '/d', value, '/f'], {
+        const child = spawn(regExe(), ['add', key, '/v', name, '/t', type, '/d', value, '/f'], {
           windowsHide: true,
           stdio: 'ignore'
         })
@@ -968,6 +1003,9 @@ export class ProxyManager {
 
     if (!alreadyRunning) {
       port = await this.freePort()
+      // remember where this run's logs begin, so diagnose() can never report a
+      // stale error left over from an earlier attempt
+      this.logCursor.set(engine, (this.logs.get(engine) ?? []).length)
       const testSettings: ProxySettings = { ...settings, mixedPort: port, allowLan: false, systemProxy: false }
       let cfg: string
       try {
@@ -1021,7 +1059,7 @@ export class ProxyManager {
         delayMs,
         exitIp: exit?.ip ?? null,
         country: exit?.country ?? null,
-        error: delayMs === null ? '无法通过该节点访问网络' : null
+        error: delayMs === null ? this.diagnose(engine, node) : null
       }
     } catch (e) {
       return { ...base, error: e instanceof Error ? e.message : '测试失败' }
@@ -1029,6 +1067,43 @@ export class ProxyManager {
       if (tempChild) await killTree(tempChild)
       if (tempDir) await removeDir(tempDir)
     }
+  }
+
+  /**
+   * Turns the core's own stderr into an explanation the user can act on.
+   *
+   * "无法通过该节点访问网络" alone is useless when the real reason is a
+   * certificate pin mismatch — which is exactly what happens with a Hysteria2
+   * link whose pinSHA256 no longer matches the server's public key.
+   */
+  private diagnose(engine: CoreId, node: ProxyNode): string {
+    const lines = this.logs.get(engine) ?? []
+    const from = this.logCursor.get(engine) ?? Math.max(0, lines.length - 40)
+    const tail = lines.slice(from).slice(-60)
+    const has = (re: RegExp): string | undefined => {
+      for (let i = tail.length - 1; i >= 0; i--) {
+        if (re.test(tail[i])) return tail[i]
+      }
+      return undefined
+    }
+    const pin = has(/unrecognized remote public key|certificate_public_key|pin/i)
+    if (pin) {
+      return `证书公钥不匹配：服务器当前公钥与链接里的 pinSHA256 不一致（服务器可能更换了证书）。可在节点设置中开启「跳过证书校验」后重试`
+    }
+    if (has(/certificate|tls:|x509/i)) {
+      return 'TLS 握手失败：证书校验未通过。可尝试开启「跳过证书校验」，或检查 SNI 是否正确'
+    }
+    if (has(/i\/o timeout|timeout|deadline exceeded/i)) {
+      return '连接超时：节点可能离线，或当前网络阻断了该端口'
+    }
+    if (has(/connection refused|no route|network is unreachable/i)) {
+      return '无法建立连接：节点地址或端口不可达'
+    }
+    if (node.protocol === 'hysteria2' || node.protocol === 'tuic') {
+      return '节点不可用：Hysteria2/TUIC 使用 UDP，请确认网络允许 UDP 且节点在线'
+    }
+    const last = has(/ERROR|FATAL|error/i)
+    return last ? `节点不可用：${last.replace(/^.*?(ERROR|FATAL)\s*/i, '').slice(0, 160)}` : '无法通过该节点访问网络'
   }
 
   private measureDelay(port: number): Promise<number | null> {
@@ -1074,54 +1149,100 @@ export class ProxyManager {
     })
   }
 
-  private probeExit(port: number): Promise<{ ip: string | null; country: string | null } | null> {
+  /**
+   * Looks up the exit IP / country through the node.
+   *
+   * Several plain-HTTP endpoints are tried in turn: some nodes (or the networks
+   * they exit through) block one of them, and a single hard-coded endpoint made
+   * the result flip between an IP and "unknown" for no visible reason.
+   */
+  private async probeExit(port: number): Promise<{ ip: string | null; country: string | null } | null> {
+    const probes: {
+      path: string
+      host: string
+      read: (j: Record<string, unknown>) => { ip: string | null; country: string | null } | null
+    }[] = [
+      {
+        path: 'http://ip-api.com/json?fields=status,country,query',
+        host: 'ip-api.com',
+        read: (j) => ({
+          ip: typeof j.query === 'string' ? j.query : null,
+          country: typeof j.country === 'string' ? j.country : null
+        })
+      },
+      {
+        path: 'http://ipinfo.io/json',
+        host: 'ipinfo.io',
+        read: (j) => ({
+          ip: typeof j.ip === 'string' ? j.ip : null,
+          country: typeof j.country === 'string' ? j.country : null
+        })
+      },
+      {
+        path: 'http://api.ipify.org/?format=json',
+        host: 'api.ipify.org',
+        read: (j) => ({ ip: typeof j.ip === 'string' ? j.ip : null, country: null })
+      }
+    ]
+
+    for (const probe of probes) {
+      const got = await this.getJson(port, probe.path, probe.host)
+      if (!got) continue
+      const parsed = probe.read(got)
+      if (parsed?.ip) return parsed
+    }
+    return null
+  }
+
+  /** Tiny HTTP GET through the local proxy port, JSON-decoded. */
+  private getJson(port: number, path: string, host: string): Promise<Record<string, unknown> | null> {
     return new Promise((resolve) => {
       let settled = false
-      const done = (v: { ip: string | null; country: string | null } | null): void => {
+      const done = (v: Record<string, unknown> | null): void => {
         if (settled) return
         settled = true
         resolve(v)
       }
-      const req = httpRequest({
-        host: '127.0.0.1',
-        port,
-        method: 'GET',
-        path: 'http://ip-api.com/json?fields=status,country,query',
-        headers: { Host: 'ip-api.com', 'User-Agent': 'Dola Toolkit/1.0' },
-        timeout: TEST_TIMEOUT
-      })
-      req.on('response', (res) => {
-        let body = ''
-        res.setEncoding('utf8')
-        res.on('data', (c: string) => {
-          if (body.length < 8192) body += c
+      try {
+        const req = httpRequest({
+          host: '127.0.0.1',
+          port,
+          method: 'GET',
+          path,
+          headers: { Host: host, 'User-Agent': 'Dola Toolkit/1.0', Accept: 'application/json' },
+          timeout: 6000
         })
-        res.on('end', () => {
-          try {
-            const j = JSON.parse(body) as { query?: unknown; country?: unknown }
-            done({
-              ip: typeof j.query === 'string' ? j.query : null,
-              country: typeof j.country === 'string' ? j.country : null
-            })
-          } catch {
-            done(null)
-          }
+        req.on('response', (res) => {
+          let body = ''
+          res.setEncoding('utf8')
+          res.on('data', (c: string) => {
+            if (body.length < 8192) body += c
+          })
+          res.on('end', () => {
+            try {
+              done(JSON.parse(body) as Record<string, unknown>)
+            } catch {
+              done(null)
+            }
+          })
         })
-      })
-      req.on('timeout', () => {
-        req.destroy()
-        done(null)
-      })
-      req.on('error', () => done(null))
-      req.end()
-      setTimeout(() => {
-        try {
+        req.on('timeout', () => {
           req.destroy()
-        } catch {
-          /* ignore */
-        }
+          done(null)
+        })
+        req.on('error', () => done(null))
+        req.end()
+        setTimeout(() => {
+          try {
+            req.destroy()
+          } catch {
+            /* ignore */
+          }
+          done(null)
+        }, 6000).unref?.()
+      } catch {
         done(null)
-      }, TEST_TIMEOUT).unref?.()
+      }
     })
   }
 
@@ -1287,6 +1408,7 @@ function sanitizeDraft(draft: Partial<ProxyNode>): Partial<ProxyNode> {
     'sni',
     'alpn',
     'fingerprint',
+    'pinSHA256',
     'publicKey',
     'shortId',
     'spiderX',
@@ -1306,6 +1428,8 @@ function sanitizeDraft(draft: Partial<ProxyNode>): Partial<ProxyNode> {
     const sec = draft.security
     if (sec === 'none' || sec === 'tls' || sec === 'reality' || sec === 'auto') out.security = sec
   }
+  // per-node TLS trust override (Hysteria2 self-signed servers, stale pins…)
+  if (typeof draft.allowInsecure === 'boolean') out.allowInsecure = draft.allowInsecure
   if (draft.network) {
     const nw = draft.network
     if (['tcp', 'ws', 'grpc', 'http', 'h2', 'quic'].includes(nw)) out.network = nw
@@ -1796,6 +1920,13 @@ function parseShadowsocks(rest: string): NodeDraft | null {
   }
 }
 
+/** Hysteria2 pinSHA256 is hex; accept it with or without separators/case. */
+function normalizePin(raw: string | null): string | undefined {
+  if (!raw) return undefined
+  const hex = raw.replace(/[^0-9a-fA-F]/g, '').toUpperCase()
+  return hex.length === 64 ? hex : undefined
+}
+
 function parseHysteria2(rest: string): NodeDraft | null {
   const { url, name } = urlParts(rest)
   const port = Number(url.port)
@@ -1812,6 +1943,8 @@ function parseHysteria2(rest: string): NodeDraft | null {
     security: 'tls',
     sni: q.get('sni') ?? undefined,
     alpn: q.get('alpn') ?? undefined,
+    allowInsecure: /^(1|true|yes)$/i.test(q.get('insecure') ?? q.get('allowInsecure') ?? q.get('skip-cert-verify') ?? ''),
+    pinSHA256: normalizePin(q.get('pinSHA256') ?? q.get('pin') ?? q.get('pinsha256')),
     obfs: q.get('obfs') ?? undefined,
     obfsParam: q.get('obfs-password') ?? undefined,
     upMbps: q.get('up') ? Number(q.get('up')) / 1_000_000 : undefined,
