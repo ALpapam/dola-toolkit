@@ -64,6 +64,8 @@ zip.file(
 <body><h1>第二章 远航</h1>
 <p>第二章的内容。点击页面下方四分之一区域可以翻页，左侧为上一页，右侧为下一页。</p>
 <p><em>强调文字</em> 与 <strong>加粗文字</strong> 也应正常显示。</p>
+<p>下面是一幅插图，用于验证带图片的页面翻页时不会闪烁：</p>
+<p><img src="cover.svg" alt="插图" style="width:70%;display:block;margin:12px auto"/></p>
 </body></html>`
 )
 zip.file(

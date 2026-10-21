@@ -117,6 +117,58 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
     [stageRef]
   )
 
+  /**
+   * Waits for the page's own images to finish decoding.
+   *
+   * Without this, a page whose content is an illustration could be captured
+   * before the <img> paints: the screenshot then contains the bare background
+   * and the leaf appears to flash or show an empty page for that turn.
+   *
+   * EPUB puts its illustrations inside the chapter iframe, which is not a
+   * descendant of the paper element — those documents are same-origin, so they
+   * are walked as well. Bound by a short timeout: a broken image must never
+   * stall a page turn.
+   */
+  const settleImages = useCallback(async (paper: HTMLElement | null): Promise<void> => {
+    const docs: Document[] = []
+    const stage = stageRef.current
+    for (const root of [paper, stage]) {
+      if (!root) continue
+      if (root.ownerDocument && !docs.includes(root.ownerDocument)) docs.push(root.ownerDocument)
+      for (const frame of Array.from(root.querySelectorAll('iframe'))) {
+        try {
+          const doc = (frame as HTMLIFrameElement).contentDocument
+          if (doc && !docs.includes(doc)) docs.push(doc)
+        } catch {
+          /* cross-origin frame: skip */
+        }
+      }
+    }
+
+    const imgs: HTMLImageElement[] = []
+    for (const doc of docs) imgs.push(...Array.from(doc.images))
+    if (imgs.length === 0) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+      return
+    }
+    await Promise.all(
+      imgs.map(
+        (im) =>
+          new Promise<void>((r) => {
+            if (im.complete && im.naturalWidth > 0) {
+              r()
+              return
+            }
+            const done = (): void => r()
+            im.addEventListener('load', done, { once: true })
+            im.addEventListener('error', done, { once: true })
+            setTimeout(done, 150)
+          })
+      )
+    )
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+  }, [stageRef])
+
   /** region of the stage to capture; smaller rect = faster IPC round-trip */
   const snapshot = useCallback(
     async (rect?: { x: number; y: number; width: number; height: number }): Promise<HTMLImageElement | null> => {
@@ -145,22 +197,33 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         })
         if (!img) return null
         /*
-         * Reject a blank capture.
+         * Reject only a genuinely empty capture.
          *
-         * If the grab comes back as near-uniform white (window occluded, GPU
-         * surface not ready, wrong rect) the curl would draw a sheet of empty
-         * paper for the whole animation — exactly the "blank page until it
-         * lands" symptom. Treat it as a failed capture so the caller can fall
-         * back to a turn that keeps the real DOM text visible.
+         * The earlier version downscaled the whole page to 64x64 before
+         * measuring contrast — that averages the glyphs away, so an ordinary
+         * text page scored sd ≈ 2 and was thrown out on every turn (which is
+         * why the console filled with "blank snapshot" and the leaf kept
+         * falling back). Contrast is now measured on full-resolution
+         * horizontal bands, where text survives, and the threshold only trips
+         * on an almost perfectly uniform image.
          */
         try {
+          const bandH = 16
+          const bands = [0.25, 0.5, 0.75]
           const probe = document.createElement('canvas')
-          probe.width = 64
-          probe.height = 64
+          probe.width = Math.min(img.naturalWidth, 768)
+          probe.height = bandH * bands.length
           const pg = probe.getContext('2d')
           if (pg) {
-            pg.drawImage(img, 0, 0, 64, 64)
-            const d = pg.getImageData(0, 0, 64, 64).data
+            bands.forEach((f, i) => {
+              const sy = Math.min(
+                Math.max(0, Math.round(img.naturalHeight * f) - bandH / 2),
+                Math.max(0, img.naturalHeight - bandH)
+              )
+              // 1:1 vertically so glyph rows are preserved
+              pg.drawImage(img, 0, sy, img.naturalWidth, bandH, 0, i * bandH, probe.width, bandH)
+            })
+            const d = pg.getImageData(0, 0, probe.width, probe.height).data
             let sum = 0
             let sum2 = 0
             let n = 0
@@ -172,8 +235,8 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
             }
             const mean = sum / n
             const sd = Math.sqrt(Math.max(0, sum2 / n - mean * mean))
-            if (sd < 3) {
-              console.warn('[curl] blank snapshot (sd=' + sd.toFixed(1) + ') — using DOM fallback')
+            if (sd < 0.8) {
+              console.warn('[curl] empty snapshot (sd=' + sd.toFixed(2) + ') — using DOM fallback')
               return null
             }
           }
@@ -270,6 +333,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         // 2. advance the content and let it paint
         // 3. capture the far half — that is the leaf's printed reverse side
         // 4. bend the leaf over the already-rendered new page
+        await settleImages(stageRef.current ? resolvePaper(stageRef.current) : null)
         const front = await snapshot()
         if (!front) {
           /*
@@ -285,6 +349,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         renderer.setLayers(front, null, geo.sheet, geo.base, geo.base)
         optsRef.current.onAdvance(dir)
         await nextPaint()
+        await settleImages(stageRef.current ? resolvePaper(stageRef.current) : null)
         const back = await captureBack(geo)
         renderer.setLayers(front, back.img, geo.sheet, geo.base, back.rect)
         await animate(dir, 0, 1, TURN_DURATION)
@@ -294,7 +359,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
         setPlaying(false)
       }
     },
-    [enabled, layout, snapshot, captureBack, animate, domFallbackTurn]
+    [enabled, layout, snapshot, captureBack, animate, domFallbackTurn, settleImages]
   )
 
   const onPointerDown = useCallback(
@@ -410,7 +475,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [enabled, stageRef, layout, snapshot, captureBack, animate, threshold]
+    [enabled, stageRef, layout, snapshot, captureBack, animate, threshold, settleImages]
   )
 
   return { playing, play, onPointerDown }
