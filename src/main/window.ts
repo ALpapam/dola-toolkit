@@ -92,6 +92,22 @@ export function createMainWindow(settings?: Settings): BrowserWindow {
 
   win.removeMenu()
 
+  /*
+   * Developer tools shortcut.
+   *
+   * `removeMenu()` also removes the default accelerators, so Ctrl+Shift+I did
+   * nothing — there was no way to open the console in the shipped app. Register
+   * it on the window's input events instead (and F12, the usual alternative).
+   */
+  win.webContents.on('before-input-event', (_event, input) => {
+    const key = input.key?.toLowerCase()
+    const chord = input.control && input.shift && key === 'i'
+    const f12 = key === 'f12'
+    if (input.type === 'keyDown' && (chord || f12)) {
+      win.webContents.toggleDevTools()
+    }
+  })
+
   win.once('ready-to-show', () => {
     if (!win.isDestroyed()) win.show()
   })

@@ -101,10 +101,10 @@ await drag(0.15, 0.82, 0.45)
 const a2 = await page()
 check('一次拖动只后退一个跨页', a2 !== b2 && a2.startsWith('1'), `${b2} -> ${a2}`)
 
-/* ---- top of the page must not start a turn ---- */
+/* ---- swipe must work anywhere on the sheet (not just a bottom band) ---- */
 const b3 = await page()
 await drag(0.85, 0.15, -0.45)
-check('顶部拖动不翻页', (await page()) === b3, b3)
+check('页面顶部横滑也能翻页', (await page()) !== b3, `${b3} -> ${await page()}`)
 
 /* ---- rapid repeated drags must not race through the book ---- */
 {

@@ -18,8 +18,6 @@ import { TURN_DURATION, resolvePaper } from './useDragFlip'
 const SLOP_PX = 6
 /** px per ms — a flick commits even below the distance threshold */
 const FLICK_VELOCITY = 0.45
-/** only the bottom 40% of the sheet starts a turn (keeps text selectable) */
-const BOTTOM_ZONE_H = 0.4
 
 export interface CurlTurnOptions {
   stageRef: React.RefObject<HTMLElement | null>
@@ -308,10 +306,13 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       const paper = resolvePaper(stage)
       if (!paper) return
       const pr = paper.getBoundingClientRect()
-      const relY = (e.clientY - pr.top) / Math.max(1, pr.height)
-      if (relY < 1 - BOTTOM_ZONE_H) return
+      // The whole sheet starts a horizontal swipe. A plain click never turns a
+      // page (the turn only commits once the pointer has actually travelled),
+      // so there is no need to restrict the grab area to a bottom band — that
+      // restriction is why swiping across the middle appeared to do nothing.
+      if (e.clientX < pr.left || e.clientX > pr.right) return
 
-      // which half turns is decided by where the finger started
+      // which half turns is decided by where the gesture started
       const dir: CurlDir = e.clientX > pr.left + pr.width / 2 ? 'next' : 'prev'
       const geo = layout(dir)
       if (!geo) return
@@ -323,38 +324,50 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       // snapshot starts now; it is an async IPC round-trip
       const snapPromise = snapshot()
       let snapReady: HTMLImageElement | null = null
-      void snapPromise.then((img) => {
-        snapReady = img
-        if (img) renderer.setLayers(img, backReady, geo.sheet, geo.base, backRect)
-      })
-      // the reverse side is captured once the new spread has painted
       let backReady: HTMLImageElement | null = null
       let backRect: Rect | null = geo.base
       let advanced = false
-
+      /** true once we may paint: the reverse side must be captured first */
+      let ready = false
       let moved = false
       let progress = 0
+
+      void snapPromise.then((img) => {
+        snapReady = img
+      })
+
+      const paint = (): void => {
+        if (!ready || !snapReady) return
+        renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
+        renderer.render({ progress, dir })
+      }
 
       const onMove = (ev: PointerEvent): void => {
         const dx = ev.clientX - startX
         if (!moved && Math.abs(dx) < SLOP_PX) return
         if (!moved) {
           moved = true
-          // commit as soon as the gesture is real, so the next spread renders
-          // underneath while the sheet is still flat over it
-          renderer.setLayers(snapReady, null, geo.sheet, geo.base, geo.base)
           optsRef.current.onAdvance(dir)
           advanced = true
-          void nextPaint().then(async () => {
+          /*
+           * Capture the reverse side BEFORE painting the base patch: once the
+           * base is on the canvas it would be part of the screenshot and the
+           * leaf's back would show the OLD page. Painting is therefore held
+           * for the duration of that one capture (~60-120ms) — imperceptible
+           * at the start of a drag, and it keeps the back face correct.
+           */
+          void (async () => {
+            await nextPaint()
             const back = await captureBack(geo)
             backReady = back.img
             backRect = back.rect
-            renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
-          })
+            ready = true
+            paint()
+          })()
         }
         const signed = dir === 'next' ? -dx : dx
         progress = Math.max(0, Math.min(1, signed / dist))
-        renderer.render({ progress, dir })
+        paint()
       }
 
       const onUp = (): void => {
@@ -367,13 +380,18 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
           return
         }
         const elapsed = Math.max(1, performance.now() - startT)
-        const commit = progress * geo.sheet.w > threshold * geo.sheet.w || (progress * dist) / elapsed > FLICK_VELOCITY
+        const commit =
+          progress * geo.sheet.w > threshold * geo.sheet.w || (progress * dist) / elapsed > FLICK_VELOCITY
 
         busy.current = true
         setPlaying(true)
         void (async () => {
           try {
             await nextPaint()
+            // Wait for the front snapshot; the back may still be in flight and
+            // will simply pop in mid-turn (paper until then).
+            if (!snapReady) snapReady = await snapPromise
+            renderer.setLayers(snapReady, backReady, geo.sheet, geo.base, backRect)
             await animate(dir, progress, commit ? 1 : 0, commit ? TURN_DURATION : 300)
             if (!commit && advanced) {
               // put the page back: the content had already moved
@@ -392,7 +410,7 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [enabled, stageRef, layout, snapshot, animate, threshold]
+    [enabled, stageRef, layout, snapshot, captureBack, animate, threshold]
   )
 
   return { playing, play, onPointerDown }
