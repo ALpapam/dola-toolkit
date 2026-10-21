@@ -70,28 +70,22 @@ const spread = () =>
   await sleep(1200)
   check('点击翻页生效', (await page()) !== b, `${b} -> ${await page()}`)
 }
-/* ---- 3: swipe works anywhere on the sheet ---- */
+/* ---- 3: dragging must NOT turn a page any more (tap zones replaced it) ---- */
 {
   await ev(`document.querySelector('.reader-foot .btn-icon')?.click()`)
   await sleep(1500)
-  for (const [label, fx, frac] of [
-    ['中下部向右拖', 0.6, -0.45],
-    ['中部向右拖', 0.55, -0.45],
-    ['左上向回拖', 0.15, 0.45]
-  ]) {
-    const before = await page()
-    const r = JSON.parse(await spread())
-    const sx = r.x + r.w * fx
-    const sy = r.y + r.h * (label.includes('左上') ? 0.2 : 0.62)
-    await mouse('mousePressed', sx, sy)
-    for (let i = 1; i <= 14; i++) {
-      await mouse('mouseMoved', sx + (r.w * frac * i) / 14, sy)
-      await sleep(20)
-    }
-    await mouse('mouseReleased', sx + r.w * frac, sy)
-    await sleep(1500)
-    check(`手势翻页：${label}`, (await page()) !== before, `${before} -> ${await page()}`)
+  const before = await page()
+  const r = JSON.parse(await spread())
+  const sx = r.x + r.w * 0.6
+  const sy = r.y + r.h * 0.6
+  await mouse('mousePressed', sx, sy)
+  for (let i = 1; i <= 14; i++) {
+    await mouse('mouseMoved', sx - (r.w * 0.45 * i) / 14, sy)
+    await sleep(20)
   }
+  await mouse('mouseReleased', sx - r.w * 0.45, sy)
+  await sleep(1500)
+  check('拖动不再翻页（已改为点击左右 1/3）', (await page()) === before, `${before} -> ${await page()}`)
 }
 
 await ev(`(async()=>{ await window.api.settings.patch({library:{spreadMode:'auto'}}) })()`)

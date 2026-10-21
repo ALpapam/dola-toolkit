@@ -15,9 +15,6 @@ import { CURL_QUALITY, PageCurlRenderer, type CurlDir } from './pageCurl'
 import { TURN_DURATION, resolvePaper } from './useDragFlip'
 
 /** pointer travel (px) before a press counts as a drag */
-const SLOP_PX = 6
-/** px per ms — a flick commits even below the distance threshold */
-const FLICK_VELOCITY = 0.45
 
 export interface CurlTurnOptions {
   stageRef: React.RefObject<HTMLElement | null>
@@ -29,8 +26,6 @@ export interface CurlTurnOptions {
    * single page as a spread, which made the turn hinge in the middle of it.
    */
   twoUp: boolean
-  /** 0..1 fraction of the sheet width the drag must cross to commit */
-  threshold: number
   /**
    * Move the content by one page/spread. Called BEFORE the animation starts
    * (so the new page is already painted underneath) and again with the opposite
@@ -42,7 +37,6 @@ export interface CurlTurnOptions {
 export interface CurlTurnApi {
   playing: boolean
   play: (dir: CurlDir) => Promise<void>
-  onPointerDown: (e: React.PointerEvent) => void
 }
 
 interface Rect {
@@ -53,7 +47,7 @@ interface Rect {
 }
 
 export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
-  const { stageRef, enabled, gpuAcceleration, twoUp, threshold, onAdvance } = opts
+  const { stageRef, enabled, gpuAcceleration, twoUp, onAdvance } = opts
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rendererRef = useRef<PageCurlRenderer | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -279,10 +273,6 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
     []
   )
 
-  /** Waits for the browser to paint, so the newly committed spread is on screen. */
-  const nextPaint = (): Promise<void> =>
-    new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
-
   /**
    * Transform-only turn used when no snapshot is available.
    *
@@ -353,108 +343,5 @@ export function useCurlTurn(opts: CurlTurnOptions): CurlTurnApi {
     [enabled, layout, snapshot, animate, domFallbackTurn, settleImages]
   )
 
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent): void => {
-      if (!enabled || busy.current || e.button !== 0) return
-      const stage = stageRef.current
-      const renderer = rendererRef.current
-      if (!stage || !renderer) return
-      const paper = resolvePaper(stage)
-      if (!paper) return
-      const pr = paper.getBoundingClientRect()
-      // The whole sheet starts a horizontal swipe. A plain click never turns a
-      // page (the turn only commits once the pointer has actually travelled),
-      // so there is no need to restrict the grab area to a bottom band — that
-      // restriction is why swiping across the middle appeared to do nothing.
-      if (e.clientX < pr.left || e.clientX > pr.right) return
-
-      // which half turns is decided by where the gesture started
-      const dir: CurlDir = e.clientX > pr.left + pr.width / 2 ? 'next' : 'prev'
-      const geo = layout(dir)
-      if (!geo) return
-
-      const startX = e.clientX
-      const startT = performance.now()
-      const dist = Math.max(80, geo.sheet.w)
-
-      // snapshot starts now; it is an async IPC round-trip
-      const snapPromise = snapshot()
-      let snapReady: HTMLImageElement | null = null
-      let advanced = false
-      let moved = false
-      let progress = 0
-
-      void snapPromise.then((img) => {
-        snapReady = img
-      })
-
-      const paint = (): void => {
-        if (!snapReady) return
-        renderer.setLayers(snapReady, geo.sheet, geo.base)
-        renderer.render({ progress, dir })
-      }
-
-      const onMove = (ev: PointerEvent): void => {
-        const dx = ev.clientX - startX
-        if (!moved && Math.abs(dx) < SLOP_PX) return
-        if (!moved) {
-          moved = true
-          // commit the moment the gesture is real: the leaf's reverse side is
-          // the live new page, so nothing needs to be captured afterwards
-          void snapPromise.then(() => {
-            optsRef.current.onAdvance(dir)
-            advanced = true
-            paint()
-          })
-        }
-        const signed = dir === 'next' ? -dx : dx
-        progress = Math.max(0, Math.min(1, signed / dist))
-        paint()
-      }
-
-      const onUp = (): void => {
-        window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
-        window.removeEventListener('pointercancel', onUp)
-
-        if (!moved) {
-          renderer.clear()
-          return
-        }
-        const elapsed = Math.max(1, performance.now() - startT)
-        const commit =
-          progress * geo.sheet.w > threshold * geo.sheet.w || (progress * dist) / elapsed > FLICK_VELOCITY
-
-        busy.current = true
-        setPlaying(true)
-        void (async () => {
-          try {
-            if (!snapReady) snapReady = await snapPromise
-            if (!advanced) {
-              optsRef.current.onAdvance(dir)
-              advanced = true
-            }
-            renderer.setLayers(snapReady, geo.sheet, geo.base)
-            await animate(dir, progress, commit ? 1 : 0, commit ? TURN_DURATION : 300)
-            if (!commit && advanced) {
-              // put the page back: the content had already moved
-              optsRef.current.onAdvance(dir === 'next' ? 'prev' : 'next')
-              await nextPaint()
-            }
-          } finally {
-            renderer.clear()
-            busy.current = false
-            setPlaying(false)
-          }
-        })()
-      }
-
-      window.addEventListener('pointermove', onMove, { passive: true })
-      window.addEventListener('pointerup', onUp)
-      window.addEventListener('pointercancel', onUp)
-    },
-    [enabled, stageRef, layout, snapshot, animate, threshold, settleImages]
-  )
-
-  return { playing, play, onPointerDown }
+  return { playing, play }
 }

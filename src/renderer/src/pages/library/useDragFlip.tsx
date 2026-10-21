@@ -500,6 +500,29 @@ export function attachGestureBridge(doc: Document): void {
   }
   doc.addEventListener('pointerup', end, true)
   doc.addEventListener('pointercancel', end, true)
+
+  /*
+   * Tap forwarding.
+   *
+   * Page turns are triggered by tapping the left/right third of the sheet, but
+   * the chapter lives in its own document, so the tap never reaches the reader's
+   * stage. Forward the tap with its position converted into the top window's
+   * coordinates; the reader works out which third it landed in.
+   */
+  doc.addEventListener(
+    'click',
+    (e) => {
+      const ev = e as MouseEvent
+      const r = frameRect()
+      const detail = { x: (r ? r.left : 0) + ev.clientX, y: (r ? r.top : 0) + ev.clientY }
+      try {
+        window.dispatchEvent(new CustomEvent('dola-epub-click', { detail }))
+      } catch {
+        /* ignore */
+      }
+    },
+    true
+  )
 }
 /**
  * Subscribes to gestures forwarded by the EPUB chapter script and replays them

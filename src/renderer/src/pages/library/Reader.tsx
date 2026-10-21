@@ -11,6 +11,7 @@ import { paginate, type PageSlice } from './paginate'
 import { useLibrary } from './store'
 import { DEFAULT_READER_FONT_ID } from '@shared/fonts'
 import { useCurlTurn } from './useCurlTurn'
+import { resolvePaper } from './useDragFlip'
 
 /* ------------------------------------------------------------------ */
 /* PDF.js is loaded lazily so txt/epub readers never pay for it        */
@@ -270,18 +271,48 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
   // stage, bends the sheet strip-by-strip from the binding and clips itself to
   // the stage box, so no format — EPUB included — can push content outside the
   // render frame. See pageCurl.ts / useCurlTurn.ts.
-  const dragEnabled = (readerCfg?.dragFlip ?? true) && flipAnimation !== 'none'
+  const animEnabled = flipAnimation !== 'none'
   const curl = useCurlTurn({
     stageRef,
-    enabled: dragEnabled && !error,
+    enabled: animEnabled && !error,
     gpuAcceleration: readerCfg?.gpuAcceleration ?? true,
     twoUp,
-    threshold: (readerCfg?.dragThreshold ?? 26) / 100,
     onAdvance: (dir: 'next' | 'prev') => {
       if (dir === 'next') advanceNext()
       else advancePrev()
     }
   })
+
+  /**
+   * Zone tap: the right third of the sheet shows the next page, the left third
+   * the previous one. The middle third deliberately does nothing so text can
+   * still be selected there.
+   */
+  const handleZoneClick = useCallback(
+    (clientX: number): void => {
+      const stage = stageRef.current
+      if (!stage || error) return
+      const paper = resolvePaper(stage)
+      if (!paper) return
+      const r = paper.getBoundingClientRect()
+      if (r.width < 4) return
+      const frac = (clientX - r.left) / r.width
+      if (frac >= 2 / 3) void curl.play('next')
+      else if (frac <= 1 / 3) void curl.play('prev')
+    },
+    [stageRef, error, curl]
+  )
+
+  // EPUB renders its chapters in an iframe, so taps inside the book never reach
+  // the stage. the bridge in useDragFlip forwards them as this event.
+  useEffect(() => {
+    const onEpubClick = (e: Event): void => {
+      const detail = (e as CustomEvent<{ x?: number }>).detail
+      if (detail && typeof detail.x === 'number') handleZoneClick(detail.x)
+    }
+    window.addEventListener('dola-epub-click', onEpubClick)
+    return () => window.removeEventListener('dola-epub-click', onEpubClick)
+  }, [handleZoneClick])
 
   /** Advances the content without animating — the curl owns the animation. */
   const advanceNext = useCallback(() => {
@@ -356,8 +387,12 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       if (Math.abs(e.deltaY) < 12) return
       e.preventDefault()
       const now = performance.now()
-      if (now < wheelLock.current) return
-      wheelLock.current = now + 620
+      const blocked = now < wheelLock.current
+      // Re-arm on EVERY event, not just the ones that turn a page: a trackpad
+      // emits a momentum tail for a second or more, and a lock that expired
+      // mid-tail let a single flick advance several spreads.
+      wheelLock.current = now + 700
+      if (blocked) return
       if (e.deltaY > 0) goNextRef.current()
       else goPrevRef.current()
     }
@@ -365,8 +400,8 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
     return () => el.removeEventListener('wheel', onWheel)
   }, [stageRef])
 
-  /* Clicking the page no longer turns it: page turning is drag-only (bottom-left
-     / bottom-right drag on the sheet) plus the < > buttons and keyboard. */
+  /* Page turning is: tap the left/right third of the sheet, the < > buttons,
+     the arrow keys and the wheel. Dragging no longer turns pages. */
 
   const leftSlice = prosePages[index]
   const rightSlice = twoUp ? prosePages[index + 1] : undefined
@@ -417,7 +452,7 @@ export function Reader({ book, onClose }: { book: BookRecord; onClose: () => voi
       <div
         className="reader-stage"
         ref={stageRef}
-        onPointerDown={curl.onPointerDown}
+        onClick={(e) => handleZoneClick(e.clientX)}
       >
         {error ? (
           <div className="empty">

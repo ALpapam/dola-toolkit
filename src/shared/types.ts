@@ -85,10 +85,6 @@ export interface ReaderSettings {
   lineHeight: number
   /** page-turn animation style */
   flipAnimation: FlipAnimation
-  /** drag the left/right edge of a page sideways to turn it */
-  dragFlip: boolean
-  /** % of page width the drag must travel before the turn commits */
-  dragThreshold: number
   /**
    * Use the GPU for compositing. Off = Chromium software rendering
    * (`app.disableHardwareAcceleration()`), which keeps the app usable on

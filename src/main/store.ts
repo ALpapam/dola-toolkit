@@ -90,8 +90,6 @@ export const DEFAULT_SETTINGS: Settings = {
     fontSize: 17,
     lineHeight: 1.9,
     flipAnimation: 'cover',
-    dragFlip: true,
-    dragThreshold: 26,
     gpuAcceleration: true
   },
   general: {
@@ -350,8 +348,6 @@ function normalizeSettings(): void {
   rd.fontSize = Math.round(clampNum(rd.fontSize, 12, 32, 17))
   rd.lineHeight = clampNum(rd.lineHeight, 1.2, 2.6, 1.9)
   if (!['slide', 'cover', 'curl', 'none'].includes(rd.flipAnimation)) rd.flipAnimation = 'cover'
-  if (typeof rd.dragFlip !== 'boolean') rd.dragFlip = true
-  rd.dragThreshold = Math.round(clampNum(rd.dragThreshold, 8, 60, 26))
   if (typeof rd.gpuAcceleration !== 'boolean') rd.gpuAcceleration = true
 
   const s = settings.sync
