@@ -333,11 +333,23 @@ select.input {
   padding-right: 34px;
 }
 .select-caret {
-  position: absolute;
-  right: 10px;
+  /*
+   * A flex child of the trigger, not an absolutely positioned decoration.
+   *
+   * Absolutely positioned with only `right`, it took its static position from
+   * the trigger's content box, which sat slightly above the text. Rotating 180°
+   * about that off-centre box then flipped the error the other way, so the arrow
+   * looked high when closed and low when open. As a centred flex item the glyph
+   * rotates around its own centre and stays on the text's baseline.
+   */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
   pointer-events: none;
   color: var(--md-on-surface-variant);
-  font-size: 20px;
 }
 
 /* ---------- Custom select (replaces the native <select> popup) ---------- */
@@ -351,7 +363,8 @@ select.input {
   gap: 8px;
   width: 100%;
   min-height: 40px;
-  padding: 0 34px 0 12px;
+  /* no reserved space for the caret any more: it is a real flex item now */
+  padding: 0 10px 0 12px;
   border-radius: var(--shape-xs, 10px);
   border: 1px solid var(--md-outline-variant);
   /* outlined variant: no filled grey background, unlike the text inputs */
