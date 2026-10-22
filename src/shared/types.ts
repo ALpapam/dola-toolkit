@@ -56,6 +56,13 @@ export interface ProxySettings {
   allowLan: boolean
   /** route DNS through the proxy chain */
   remoteDns: boolean
+  /**
+   * How traffic is routed.
+   *   bypass — 绕过大陆：CN domains/IPs go out directly, everything else uses the
+   *            node (v2rayN's default; avoids sending domestic traffic abroad)
+   *   global — 全局：every connection goes through the node
+   */
+  routingMode: 'bypass' | 'global'
   logLevel: 'error' | 'warn' | 'info' | 'debug'
   autoStart: boolean
   /** write Windows system proxy on start / clear it on stop */

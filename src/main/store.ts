@@ -68,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
     mixedPort: 7897,
     allowLan: false,
     remoteDns: true,
+    routingMode: 'bypass',
     logLevel: 'info',
     autoStart: false,
     systemProxy: true,
@@ -326,6 +327,9 @@ function normalizeSettings(): void {
     'autoRestart'
   ] as const) {
     if (typeof p[k] !== 'boolean') p[k] = DEFAULT_SETTINGS.proxy[k]
+  }
+  if (p.routingMode !== 'bypass' && p.routingMode !== 'global') {
+    p.routingMode = DEFAULT_SETTINGS.proxy.routingMode
   }
   if (typeof p.bypass !== 'string') p.bypass = DEFAULT_SETTINGS.proxy.bypass
 

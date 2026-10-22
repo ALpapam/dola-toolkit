@@ -48,6 +48,7 @@ import {
   findGeo,
   geoDir,
   geoFileInfo,
+  findRuleSets,
   listEngines,
   runCoreVersion
 } from './binary'
@@ -450,6 +451,17 @@ export class ProxyManager {
     }
 
     const run = this.running.get(engine) ?? emptyRunning()
+    /*
+     * Starting twice is not harmless: the second core cannot bind the mixed port,
+     * exits with code 1, and the manager then records "核心退出 code=1" for an
+     * engine whose first instance is perfectly healthy — indistinguishable from a
+     * real crash, and it makes the proxy look like it keeps dropping. When the
+     * same node is already running, just report the current status.
+     */
+    if (run.child && run.nodeId === node.id && (await this.waitForPort(this.settings().mixedPort, 400))) {
+      this.emitState()
+      return this.statusOf(engine)
+    }
     this.running.set(engine, run)
     run.error = null
     run.nodeId = node.id
@@ -464,7 +476,7 @@ export class ProxyManager {
     const settings = this.settings()
     let configText: string
     try {
-      configText = buildCoreConfig(engine, node, settings)
+      configText = buildCoreConfig(engine, node, settings, findRuleSets())
     } catch (e) {
       const msg = e instanceof Error ? e.message : '配置生成失败'
       this.running.set(engine, { ...emptyRunning(), nodeId: node.id, error: msg })
@@ -1009,7 +1021,7 @@ export class ProxyManager {
       const testSettings: ProxySettings = { ...settings, mixedPort: port, allowLan: false, systemProxy: false }
       let cfg: string
       try {
-        cfg = buildCoreConfig(engine, node, testSettings)
+        cfg = buildCoreConfig(engine, node, testSettings, findRuleSets())
       } catch (e) {
         return { ...base, error: e instanceof Error ? e.message : '配置生成失败' }
       }

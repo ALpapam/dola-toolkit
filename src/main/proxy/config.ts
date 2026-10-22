@@ -243,6 +243,16 @@ export function buildXrayConfig(node: ProxyNode, settings: ProxySettings): strin
     // keep the fake Host reachable without looping through the proxy for DNS
     rules.push({ type: 'field', domain: [str(node.host)], outboundTag: 'proxy' })
   }
+  /*
+   * 绕过大陆: CN domains and IPs leave directly. Xray ships geoip.dat / geosite.dat,
+   * so no extra files are needed here.
+   */
+  if (settings.routingMode !== 'global') {
+    rules.push(
+      { type: 'field', domain: ['geosite:cn', 'geosite:private'], outboundTag: 'direct' },
+      { type: 'field', ip: ['geoip:cn'], outboundTag: 'direct' }
+    )
+  }
 
   const dnsServers = settings.remoteDns
     ? ['1.1.1.1', '8.8.8.8', '223.5.5.5']
@@ -380,7 +390,16 @@ function sbOutbound(n: ProxyNode): Record<string, unknown> {
   const base: Record<string, unknown> = {
     tag: 'proxy',
     server: str(n.server),
-    server_port: port(n.port)
+    server_port: port(n.port),
+    /*
+     * Resolve destination domains on the CLIENT instead of forwarding the name
+     * to the server. Hysteria2 servers resolve with their own system resolver;
+     * when that resolver cannot answer (a domestic resolver asked for a
+     * googlevideo host, for example) every connection dies with
+     * "resolve error: ... no such host" and the proxy looks like it keeps
+     * dropping even though the tunnel itself is fine.
+     */
+    domain_strategy: 'prefer_ipv4'
   }
 
   switch (n.protocol) {
@@ -452,19 +471,59 @@ function sbOutbound(n: ProxyNode): Record<string, unknown> {
   return base
 }
 
-export function buildSingBoxConfig(node: ProxyNode, settings: ProxySettings): string {
+export function buildSingBoxConfig(
+  node: ProxyNode,
+  settings: ProxySettings,
+  /** CN rule-set files; omitted by callers that only need a plain config */
+  cnRuleSets: { geosite: string | null; geoip: string | null } = { geosite: null, geoip: null }
+): string {
+  const bypass = settings.routingMode !== 'global'
+  const ruleSets = bypass ? cnRuleSets : { geosite: null, geoip: null }
+  const useRuleSets = bypass && Boolean(ruleSets.geosite || ruleSets.geoip)
+  const ruleSetDefs: Record<string, unknown>[] = []
+  const cnRuleSetTags: string[] = []
+  if (ruleSets.geosite) {
+    ruleSetDefs.push({ type: 'local', tag: 'geosite-cn', format: 'binary', path: ruleSets.geosite })
+    cnRuleSetTags.push('geosite-cn')
+  }
+  if (ruleSets.geoip) {
+    ruleSetDefs.push({ type: 'local', tag: 'geoip-cn', format: 'binary', path: ruleSets.geoip })
+    cnRuleSetTags.push('geoip-cn')
+  }
+
+  const dnsServers: Record<string, unknown>[] = [{ type: 'udp', tag: 'local', server: '223.5.5.5' }]
+  if (settings.remoteDns) {
+    dnsServers.push({ type: 'https', tag: 'remote', server: '1.1.1.1', detour: 'proxy' })
+  }
+  /*
+   * DNS split, the same idea as v2rayN:
+   *   bypass — CN domains resolve through the local resolver (fast, and getting
+   *            the geographically-best CDN node), everything else through DoH over
+   *            the tunnel so poisoned answers never reach us
+   *   global — everything through DoH over the tunnel
+   */
+  const dnsRules: Record<string, unknown>[] = []
+  if (useRuleSets && settings.remoteDns && ruleSets.geosite) {
+    dnsRules.push({ rule_set: 'geosite-cn', server: 'local' })
+  }
+
+  const routeRules: Record<string, unknown>[] = [
+    ...(settings.sniffing
+      ? [{ action: 'sniff', inbound: ['mixed-in'], timeout: '300ms' } as Record<string, unknown>]
+      : []),
+    { ip_is_private: true, outbound: 'direct' },
+    // CN traffic leaves directly, so domestic sites are not routed abroad
+    ...(useRuleSets && cnRuleSetTags.length ? [{ rule_set: cnRuleSetTags, outbound: 'direct' }] : [])
+  ]
+
   const config = {
     log: {
       level: settings.logLevel === 'debug' ? 'debug' : settings.logLevel === 'warn' ? 'warn' : settings.logLevel === 'error' ? 'error' : 'info',
       timestamp: true
     },
     dns: {
-      servers: settings.remoteDns
-        ? [
-            { type: 'udp', tag: 'local', server: '223.5.5.5' },
-            { type: 'https', tag: 'remote', server: '1.1.1.1', detour: 'proxy' }
-          ]
-        : [{ type: 'udp', tag: 'local', server: '223.5.5.5' }],
+      servers: dnsServers,
+      rules: dnsRules,
       final: settings.remoteDns ? 'remote' : 'local',
       strategy: settings.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
     },
@@ -483,13 +542,8 @@ export function buildSingBoxConfig(node: ProxyNode, settings: ProxySettings): st
     ],
     route: {
       // sing-box 1.13+ moved sniffing from inbound fields to route actions.
-      rules: [
-        ...(settings.sniffing
-          ? [{ action: 'sniff', inbound: ['mixed-in'], timeout: '300ms' } as Record<string, unknown>]
-          : []),
-        { ip_is_private: true, outbound: 'direct' }
-      ],
-      rule_set: [] as unknown[],
+      rules: routeRules,
+      rule_set: ruleSetDefs,
       final: 'proxy',
       auto_detect_interface: true,
       default_domain_resolver: settings.remoteDns ? 'remote' : 'local'
@@ -765,6 +819,10 @@ export function buildMihomoConfig(node: ProxyNode, settings: ProxySettings): str
       'IP-CIDR,169.254.0.0/16,DIRECT,no-resolve',
       'DOMAIN-SUFFIX,local,DIRECT',
       'DOMAIN-SUFFIX,lan,DIRECT',
+      // 绕过大陆: mihomo carries its own GEOSITE / GEOIP databases
+      ...(settings.routingMode !== 'global'
+        ? ['GEOSITE,cn,DIRECT', 'GEOIP,CN,DIRECT', 'GEOSITE,private,DIRECT']
+        : []),
       'MATCH,PROXY'
     ]
   }
@@ -810,13 +868,14 @@ export function validateMihomoYaml(text: string): string[] {
 export function buildCoreConfig(
   engine: CoreId,
   node: ProxyNode,
-  settings: ProxySettings
+  settings: ProxySettings,
+  cnRuleSets: { geosite: string | null; geoip: string | null } = { geosite: null, geoip: null }
 ): string {
   switch (engine) {
     case 'xray':
       return buildXrayConfig(node, settings)
     case 'singbox':
-      return buildSingBoxConfig(node, settings)
+      return buildSingBoxConfig(node, settings, cnRuleSets)
     case 'mihomo':
       return buildMihomoConfig(node, settings)
     default:

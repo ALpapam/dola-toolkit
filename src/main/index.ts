@@ -138,6 +138,14 @@ let allowWindowDestroy = false
 
       // settings must exist before any window or IPC handler touches them
       initStore(app.getPath('userData'))
+      /*
+       * The proxy manager reads the node store in its constructor, and
+       * `new ProxyManager()` runs when the module is first imported — before
+       * initStore had a directory to read from. Without this refresh it kept the
+       * empty defaults for the whole session, which is why the node list looked
+       * wiped after a restart (and the next write persisted that empty list).
+       */
+      proxyManager.reload()
       logsDir = getLogsDir()
 
       // only one renderer is trusted: ours, loaded from file:// or the dev server

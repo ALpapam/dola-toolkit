@@ -27,6 +27,12 @@ extraResources:
     to: icon.png
   - from: build/icon.ico
     to: icon.ico
+  # 绕过大陆 needs sing-box binary rule-sets: the legacy geoip.dat / geosite.dat
+  # that Xray and Mihomo read cannot be parsed by sing-box 1.14.
+  - from: resources/geo
+    to: geo
+    filter:
+      - '**/*'
 win:
   icon: build/icon.ico
   target:

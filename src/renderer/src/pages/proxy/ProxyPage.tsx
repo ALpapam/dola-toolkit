@@ -164,9 +164,34 @@ export function ProxyPage(): JSX.Element {
           <div className="node-name">
             {selected ? `${selected.name} · ${formatProtocol(selected.protocol)} · ${selected.server}:${selected.port}` : '尚未选择节点'}
           </div>
-          <div className="hstack" style={{ marginTop: 8, gap: 10 }}>
+          <div className="hstack" style={{ marginTop: 8, gap: 10, flexWrap: 'wrap' }}>
             <Chip icon="lan" selected={state.systemProxy} onClick={() => void toggleSystemProxy(!state.systemProxy)}>
               系统代理
+            </Chip>
+            {/* 分流模式：复活内核后生效 */}
+            <Chip
+              icon="language"
+              selected={state.settings.routingMode === 'bypass'}
+              onClick={() =>
+                void window.api.settings.patch({ proxy: { routingMode: 'bypass' } }).then(() => {
+                  toast.info('已切换为绕过大陆，重新启动内核后生效')
+                  void load()
+                })
+              }
+            >
+              绕过大陆
+            </Chip>
+            <Chip
+              icon="globe"
+              selected={state.settings.routingMode === 'global'}
+              onClick={() =>
+                void window.api.settings.patch({ proxy: { routingMode: 'global' } }).then(() => {
+                  toast.info('已切换为全局代理，重新启动内核后生效')
+                  void load()
+                })
+              }
+            >
+              全局
             </Chip>
             <Chip
               icon="memory"

@@ -189,6 +189,32 @@ export function geoDir(): string {
   return join(root, 'geofiles')
 }
 
+/**
+ * sing-box rule-set (.srs) files for the 绕过大陆 mode.
+ *
+ * Unlike Xray and Mihomo, sing-box 1.14 cannot read the legacy geoip.dat /
+ * geosite.dat databases, so the CN lists are shipped separately as binary rule
+ * sets. Returns nulls when they are missing, in which case the caller falls back
+ * to routing everything through the proxy.
+ */
+export function findRuleSets(): { geosite: string | null; geoip: string | null } {
+  const roots = [
+    // packaged: extraResources copies resources/geo to <resources>/geo
+    join(process.resourcesPath ?? '', 'geo'),
+    join(app.getAppPath(), 'resources', 'geo'),
+    join(dirname(app.getPath('exe')), 'geo'),
+    join(process.cwd(), 'resources', 'geo')
+  ]
+  let geosite: string | null = null
+  let geoip: string | null = null
+  for (const dir of roots) {
+    if (!geosite && isFile(join(dir, 'geosite-cn.srs'))) geosite = join(dir, 'geosite-cn.srs')
+    if (!geoip && isFile(join(dir, 'geoip-cn.srs'))) geoip = join(dir, 'geoip-cn.srs')
+    if (geosite && geoip) break
+  }
+  return { geosite, geoip }
+}
+
 export function findGeo(): GeoPaths {
   const roots = coreRoots()
   for (const root of roots) {
