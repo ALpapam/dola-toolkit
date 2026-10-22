@@ -1123,8 +1123,31 @@ function GeneralSection({ settings, patch }: { settings: Settings; patch: (p: Se
         <Icon name="tune" size={20} /> 通用
       </h2>
       <div className="set-card">
-        <SettingRow title="关闭时最小化到后台" desc="保持代理与同步继续运行">
-          <Switch checked={g.closeToTray} onChange={(v) => void patch({ general: { closeToTray: v } })} />
+        <SettingRow
+          title="关闭时最小化到后台"
+          desc={
+            g.closeToTrayAsked
+              ? '保持代理与同步继续运行；关闭时按此开关执行，不再询问'
+              : '保持代理与同步继续运行；首次关闭时会先询问一次'
+          }
+        >
+          <Switch
+            checked={g.closeToTray}
+            onChange={(v) => void patch({ general: { closeToTray: v, closeToTrayAsked: true } })}
+          />
+        </SettingRow>
+        <SettingRow title="关闭确认" desc="重新开启「最小化到托盘还是退出」的询问">
+          <Button
+            variant="tonal"
+            icon="refresh"
+            disabled={!g.closeToTrayAsked}
+            onClick={() => {
+              void patch({ general: { closeToTrayAsked: false } })
+              toast.info('下次关闭时会再次询问')
+            }}
+          >
+            {g.closeToTrayAsked ? '重新开启询问' : '已开启'}
+          </Button>
         </SettingRow>
         <SettingRow title="开机自启" desc="登录 Windows 后自动启动 Dola Toolkit">
           <Switch checked={g.launchAtLogin} onChange={(v) => void patch({ general: { launchAtLogin: v } })} />

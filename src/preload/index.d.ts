@@ -34,6 +34,10 @@ export interface DolaToolkitApi {
     minimize(): void
     toggleMaximize(): void
     close(): void
+    /** fires when closing needs the user's decision (minimize to tray or quit) */
+    onCloseAsk(cb: () => void): () => void
+    /** answers that prompt; remember=true also updates the setting */
+    resolveClose(choice: { closeToTray: boolean; remember: boolean }): Promise<boolean>
     openExternal(url: string): Promise<void>
     showItem(path: string): Promise<void>
     openLogs(): Promise<void>

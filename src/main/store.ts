@@ -96,6 +96,7 @@ export const DEFAULT_SETTINGS: Settings = {
     language: 'zh',
     zoom: 1,
     closeToTray: false,
+    closeToTrayAsked: false,
     launchAtLogin: false,
     checkUpdates: true
   }
@@ -331,7 +332,7 @@ function normalizeSettings(): void {
   const g = settings.general
   g.zoom = clampNum(g.zoom, 0.5, 3, 1)
   if (g.language !== 'zh' && g.language !== 'en') g.language = 'zh'
-  for (const k of ['closeToTray', 'launchAtLogin', 'checkUpdates'] as const) {
+  for (const k of ['closeToTray', 'closeToTrayAsked', 'launchAtLogin', 'checkUpdates'] as const) {
     if (typeof g[k] !== 'boolean') g[k] = DEFAULT_SETTINGS.general[k]
   }
 

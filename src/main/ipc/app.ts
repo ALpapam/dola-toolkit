@@ -7,7 +7,7 @@ import { app, ipcMain, shell, BrowserWindow } from 'electron'
 import { IPC } from '@shared/channels'
 import type { AppInfo } from '@shared/types'
 import { APP_VERSION } from '@shared/version'
-import { getLogsDir, getSettings } from '../store'
+import { getLogsDir, getSettings, patchSettings } from '../store'
 import { broadcast, getMainWindow, hideMainWindow } from '../window'
 import { proxyManager } from '../proxy/manager'
 
@@ -86,15 +86,11 @@ export function registerAppIpc(): void {
     else win.maximize()
   })
 
-  ipcMain.on(IPC.appClose, () => {
-    // closeToTray: hide instead of destroying the window; the app stays alive so
-    // proxies keep running. Everything else: a real close.
-    let closeToTray = false
-    try {
-      closeToTray = getSettings().general.closeToTray
-    } catch {
-      closeToTray = false
-    }
+  /**
+   * Performs the close: hide to tray, or really quit.
+   * `closeToTray` also decides whether the proxy/sync keep running.
+   */
+  const performClose = (closeToTray: boolean): void => {
     const win = getMainWindow()
     if (closeToTray && win) {
       hideMainWindow()
@@ -102,6 +98,50 @@ export function registerAppIpc(): void {
       return
     }
     app.quit()
+  }
+
+  ipcMain.on(IPC.appClose, () => {
+    /*
+     * First close asks instead of guessing.
+     *
+     * `closeToTray` alone cannot express "the user never chose": defaulting it
+     * to false would quit on a close the user expected to be minimized, and
+     * defaulting it to true would leave the app running invisibly. Until the
+     * question has been answered once, the renderer shows a prompt and reports
+     * back through appCloseResolve.
+     */
+    let general: { closeToTray: boolean; closeToTrayAsked: boolean } = {
+      closeToTray: false,
+      closeToTrayAsked: true
+    }
+    try {
+      const g = getSettings().general
+      general = { closeToTray: g.closeToTray, closeToTrayAsked: g.closeToTrayAsked === true }
+    } catch {
+      /* fall through with the defaults above */
+    }
+    if (!general.closeToTrayAsked) {
+      broadcast(IPC.appCloseAsk)
+      return
+    }
+    performClose(general.closeToTray)
+  })
+
+  ipcMain.handle(IPC.appCloseResolve, (_e, payload: unknown): boolean => {
+    const choice = (payload ?? {}) as { closeToTray?: unknown; remember?: unknown }
+    const closeToTray = choice.closeToTray === true
+    if (choice.remember === true) {
+      // Remembering the answer also updates the switch on the settings page, and
+      // from then on closing follows it without asking again.
+      try {
+        const next = patchSettings({ general: { closeToTray, closeToTrayAsked: true } })
+        broadcast(IPC.settingsChanged, next)
+      } catch {
+        /* still close even if persisting failed */
+      }
+    }
+    performClose(closeToTray)
+    return true
   })
 
   ipcMain.handle(IPC.appOpenExternal, async (_e, url: unknown) => {

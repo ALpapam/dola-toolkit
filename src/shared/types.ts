@@ -126,6 +126,12 @@ export interface GeneralSettings {
   language: 'zh' | 'en'
   zoom: number
   closeToTray: boolean
+  /**
+   * true once the user has answered the "minimize to tray?" prompt — either in
+   * that dialog or by flipping the setting directly. While false, closing the
+   * window asks instead of guessing.
+   */
+  closeToTrayAsked: boolean
   launchAtLogin: boolean
   checkUpdates: boolean
 }

@@ -7,6 +7,10 @@ export const IPC = {
   appMinimize: 'app:minimize',
   appToggleMaximize: 'app:toggle-maximize',
   appClose: 'app:close',
+  /** main -> renderer: ask whether closing should hide to tray */
+  appCloseAsk: 'app:close-ask',
+  /** renderer -> main: the answer to that prompt */
+  appCloseResolve: 'app:close-resolve',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
   appCapture: 'app:capture',

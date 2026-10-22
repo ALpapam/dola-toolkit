@@ -6,6 +6,7 @@ import { ProxyPage } from './pages/proxy/ProxyPage'
 import { LibraryPage } from './pages/library/LibraryPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { ToastHost } from './ui/toast'
+import { Button, Dialog, Switch } from './ui/controls'
 import { NavRail } from './shell/NavRail'
 import { TitleBar } from './shell/TitleBar'
 import { initThemeListeners, useTheme } from './theme/store'
@@ -103,6 +104,7 @@ export default function App(): JSX.Element {
         </div>
       </div>
       <ToastHost />
+      <ClosePrompt />
       {!ready ? (
         <div
           style={{
@@ -137,4 +139,65 @@ function useEffectBridge(): ReactNode {
     return off
   }, [])
   return null
+}
+
+/**
+ * "Minimize to tray or quit?" prompt.
+ *
+ * The main process asks before the first close, because the boolean setting
+ * alone cannot tell "never chose" apart from "chose to quit". Answering with
+ * 「下次不再提示」 stores the choice, which is the same value the settings switch
+ * shows — so the dialog and the switch stay in sync either way round.
+ */
+function ClosePrompt(): JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  const [remember, setRemember] = useState(true)
+
+  useEffect(() => {
+    const off = window.api.app.onCloseAsk(() => {
+      setRemember(true)
+      setOpen(true)
+    })
+    return off
+  }, [])
+
+  if (!open) return null
+
+  const answer = (closeToTray: boolean): void => {
+    setOpen(false)
+    void window.api.app.resolveClose({ closeToTray, remember })
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={() => setOpen(false)}
+      title="关闭 Dola Toolkit"
+      subtitle="你可以让它在后台继续运行，代理与同步不会中断"
+      icon="chevronDown"
+      width="slim"
+      footer={
+        <>
+          <Button variant="text" onClick={() => answer(false)}>
+            退出程序
+          </Button>
+          <Button variant="filled" icon="chevronDown" onClick={() => answer(true)}>
+            最小化到托盘
+          </Button>
+        </>
+      }
+    >
+      <div className="stack-sm">
+        <div className="hstack" style={{ gap: 10, alignItems: 'flex-start' }}>
+          <Switch checked={remember} onChange={setRemember} />
+          <div>
+            <div style={{ fontWeight: 500 }}>下次不再提示</div>
+            <div className="tiny muted">
+              会同时更新「设置 → 通用 → 关闭时最小化到后台」，之后按该开关执行
+            </div>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+  )
 }
