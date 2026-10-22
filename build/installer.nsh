@@ -58,13 +58,24 @@
   Push $0
   Push $1
 
+  ; Leftover uninstaller images from an interrupted attempt. Since the installer is
+  ; elevated from the start these belong to the same integrity level, so the kill
+  ; actually succeeds — the unelevated build silently failed at exactly this step,
+  ; which is what produced "Dola Toolkit 无法关闭" followed by the locked
+  ; "Uninstall Dola Toolkit.exe".
   nsExec::Exec `"$SYSDIR\taskkill.exe" /F /T /IM "Un_A.exe"`
   Pop $0
   nsExec::Exec `"$SYSDIR\taskkill.exe" /F /T /IM "Uninstall ${PRODUCT_NAME}.exe"`
   Pop $0
 
-  nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process -Name '${APP_EXECUTABLE_FILENAME}' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and $$_.Path -like '*\Temp\*' } | Stop-Process -Force -ErrorAction SilentlyContinue"`
+  ; The app itself may be open (installed copy or the portable build running from
+  ; %TEMP%). Stop every instance now that we have the rights to do it; otherwise
+  ; the stock check interrupts the install halfway through.
+  nsExec::Exec `"$SYSDIR\taskkill.exe" /F /T /IM "${APP_EXECUTABLE_FILENAME}"`
   Pop $0
+
+  ; give Windows a moment to release the file handles before files are written
+  Sleep 800
 
   Pop $1
   Pop $0

@@ -54,10 +54,17 @@ portable:
 nsis:
   # assisted installer: the user picks the folder and whether to have shortcuts
   oneClick: false
-  perMachine: false
-  # per-user install: no UAC prompt, no admin rights needed. Users who want a
-  # machine-wide install can still move the folder themselves.
-  allowElevation: false
+  # Elevated from the very start (one UAC prompt before anything else).
+  #
+  # A per-user install looked friendlier, but it cannot clean up after a previous
+  # attempt: a stuck uninstaller or an app process started elevated belongs to a
+  # different integrity level, so taskkill is denied, NSIS keeps reporting
+  # "Dola Toolkit 无法关闭", and the retry then fails with
+  # "无法打开要写入的文件 …\Uninstall Dola Toolkit.exe". Asking for admin up front
+  # lets the cleanup below actually work, and installing under Program Files
+  # matches what users expect from "setup.exe".
+  perMachine: true
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
