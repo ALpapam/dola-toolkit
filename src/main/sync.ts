@@ -8,6 +8,7 @@
 
 import type { BookRecord, FolderRecord, SyncStatus, WebDavSettings } from '../shared/types'
 import { IPC } from '../shared/channels'
+import { APP_VERSION } from '../shared/version'
 import { getLibraryStore, broadcast, type LibraryStore } from './library/store'
 import { getSettings, patchSettings } from './store'
 
@@ -105,7 +106,7 @@ async function dav(
   try {
     const headers: Record<string, string> = {
       ...authHeader(cfg),
-      'User-Agent': 'Dola Toolkit/0.0.1 (WebDAV sync)'
+      'User-Agent': `Dola Toolkit/${APP_VERSION} (WebDAV sync)`
     }
     if (opts.contentType) headers['Content-Type'] = opts.contentType
     const res = await fetch(url, {

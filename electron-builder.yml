@@ -33,15 +33,48 @@ extraResources:
     to: geo
     filter:
       - '**/*'
+  # licence + notices travel with the app so they can be read after install
+  - from: LICENSE
+    to: LICENSE
+  - from: EULA.md
+    to: EULA.md
+  - from: THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
 win:
   icon: build/icon.ico
   target:
+    - target: nsis
+      arch: [x64]
     - target: portable
       arch: [x64]
 portable:
   artifactName: DolaToolkit-${version}-portable.${ext}
   requestExecutionLevel: user
   unpackDirName: dola-toolkit
+nsis:
+  # assisted installer: the user picks the folder and whether to have shortcuts
+  oneClick: false
+  perMachine: false
+  # per-user install: no UAC prompt, no admin rights needed. Users who want a
+  # machine-wide install can still move the folder themselves.
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  # the shortcut itself is renamed per system language in build/installer.nsh
+  shortcutName: Dola Toolkit
+  uninstallDisplayName: ${productName} ${version}
+  artifactName: DolaToolkit-${version}-setup.${ext}
+  license: build/license.txt
+  include: build/installer.nsh
+  runAfterFinish: true
+  menuCategory: false
+  installerLanguages:
+    - zh_CN
+    - en_US
+  # no forced `language:` — the installer follows the system language, which is
+  # also what decides the shortcut name (多拉工具箱 vs Dola Toolkit)
+  deleteAppDataOnUninstall: false
 npmRebuild: false
 # reuse the already-installed local Electron instead of downloading it from GitHub
 electronDist: node_modules/electron/dist
