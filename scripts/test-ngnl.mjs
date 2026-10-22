@@ -71,7 +71,8 @@ async function main() {
     ai: {
       enabled: true,
       baseUrl: 'https://api.deepseek.com/v1',
-      apiKey: 'sk-5a4aee6616e745b196c07232a121afe2',
+      // never hardcode a key: export DOLA_TEST_AI_KEY before running this script
+      apiKey: process.env.DOLA_TEST_AI_KEY ?? '',
       model: 'deepseek-flash',
       temperature: 0.3,
       maxTokens: 4096
