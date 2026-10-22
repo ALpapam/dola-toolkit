@@ -353,8 +353,9 @@ select.input {
   min-height: 40px;
   padding: 0 34px 0 12px;
   border-radius: var(--shape-xs, 10px);
-  border: 1px solid var(--md-outline);
-  background: var(--md-surface-container-high);
+  border: 1px solid var(--md-outline-variant);
+  /* outlined variant: no filled grey background, unlike the text inputs */
+  background: transparent;
   color: var(--md-on-surface);
   font: inherit;
   font-size: 13px;
@@ -365,15 +366,17 @@ select.input {
     background var(--dur-1) linear;
 }
 .select-trigger:hover {
-  background: var(--md-surface-container-highest);
+  background: color-mix(in srgb, var(--md-on-surface) 5%, transparent);
+  border-color: var(--md-outline);
 }
 .select-trigger:focus-visible {
   outline: none;
   border-color: var(--md-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-primary) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-primary) 26%, transparent);
 }
 .select.is-open .select-trigger {
   border-color: var(--md-primary);
+  background: color-mix(in srgb, var(--md-primary) 7%, transparent);
 }
 .select-value {
   flex: 1 1 auto;

@@ -16,9 +16,9 @@
   gap: var(--sp-5);
   padding: var(--sp-6);
   border-radius: var(--shape-xl);
-  /* flat fill: the decorative corner glow made the card look busy */
-  background: var(--md-surface-container-low);
-  border: 1px solid color-mix(in srgb, var(--md-outline-variant) 55%, transparent);
+  /* a light tint instead of a gradient: flat, but not colourless */
+  background: color-mix(in srgb, var(--md-primary-container) 38%, var(--md-surface-container-low));
+  border: 1px solid color-mix(in srgb, var(--md-primary) 18%, transparent);
   margin-bottom: var(--sp-6);
   overflow: hidden;
   position: relative;
@@ -44,7 +44,8 @@
   display: grid;
   place-items: center;
   font-size: 38px;
-  background: var(--md-primary);
+  /* softer than the full primary, but still a single flat colour */
+  background: color-mix(in srgb, var(--md-primary) 82%, var(--md-surface-container-highest));
   color: var(--md-on-primary);
   box-shadow: var(--elev-2);
 }
@@ -121,8 +122,9 @@
   gap: var(--sp-5);
   padding: var(--sp-5) var(--sp-6);
   border-radius: var(--shape-xl);
-  background: var(--md-surface-container-low);
-  border: 1px solid color-mix(in srgb, var(--md-outline-variant) 55%, transparent);
+  /* light tint, flat fill (no gradient) */
+  background: color-mix(in srgb, var(--md-primary-container) 30%, var(--md-surface-container-low));
+  border: 1px solid color-mix(in srgb, var(--md-primary) 16%, transparent);
   flex: 0 0 auto;
 }
 .power-wrap {
