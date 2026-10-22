@@ -65,9 +65,10 @@ nsis:
   shortcutName: Dola Toolkit
   uninstallDisplayName: ${productName} ${version}
   artifactName: DolaToolkit-${version}-setup.${ext}
-  # HTML licence page: carries its own charset, so it cannot be mis-decoded the
-  # way a BOM-less plain-text licence was (that showed up as mojibake on Chinese Windows)
-  license: build/license.html
+  # Plain-text licence page with a UTF-8 BOM. The BOM is what stops NSIS decoding it
+  # as ANSI (that was the mojibake); plain text also paints immediately, unlike the
+  # embedded HTML page which stayed blank until the user scrolled.
+  license: build/license.txt
   include: build/installer.nsh
   runAfterFinish: true
   menuCategory: false
