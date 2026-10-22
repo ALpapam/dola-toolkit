@@ -1,0 +1,64 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>多拉工具箱 用户协议</title>
+<style>
+  body { font-family: "Microsoft YaHei UI","Segoe UI",sans-serif; font-size: 12.5px; line-height: 1.6; color: #1c1b1f; margin: 0; padding: 2px 10px 14px; }
+  h1 { font-size: 17px; margin: 6px 0 12px; }
+  h2 { font-size: 13.5px; margin: 16px 0 6px; color: #4a3b6b; }
+  h3 { font-size: 12.5px; margin: 12px 0 4px; }
+  p { margin: 5px 0; }
+  strong { color: #4a3b6b; }
+  hr { border: 0; border-top: 1px solid #d8d2de; margin: 12px 0; }
+  table { border-collapse: collapse; margin: 6px 0; }
+  td { border: 1px solid #d8d2de; padding: 3px 8px; }
+  code { background: #efe9f4; padding: 1px 4px; border-radius: 4px; font-family: Consolas,monospace; }
+  a { color: #6f4fb5; }
+</style>
+</head>
+<body>
+<h1>多拉工具箱 用户协议</h1>
+<p><strong>版本：beta 0.0.2</strong></p>
+<p><strong>生效日期：2026 年 10 月 22 日</strong></p>
+<p>安装或使用 Dola Toolkit（多拉工具箱，以下简称"本软件"）即表示你已阅读、理解并同意本协议的全部内容。如果不同意，请不要安装或使用本软件。</p>
+<hr>
+<h2>1. 软件性质</h2>
+<p>1.1 本软件是一款<strong>本地运行</strong>的 Windows 桌面工具箱，当前包含代理客户端与书库阅读两个工具。</p>
+<p>1.2 本软件<strong>完全开源</strong>，源代码以 <a href="LICENSE">MIT 许可证</a> 发布，你可以在 &lt;https://github.com/ALpapam/dola-toolkit&gt; 获取、审查、修改与再分发。</p>
+<p>1.3 本软件<strong>不提供任何代理服务器、订阅或网络服务</strong>。软件内的代理内核（Xray / sing-box / Mihomo）只是通用客户端；你需要自行提供节点、订阅或服务器。节点配置由你自己填写并保存在你自己的电脑上。</p>
+<h2>2. 你的责任</h2>
+<p>2.1 你应遵守<strong>所在地的法律法规</strong>使用本软件。因使用本软件（包括但不限于访问特定网络资源）产生的一切后果，由你自行承担。</p>
+<p>2.2 你应确保所使用的节点、服务器、账号与密钥来源合法，且你有权使用它们。</p>
+<p>2.3 你不得利用本软件从事任何违法活动，包括但不限于攻击他人系统、传播违法内容、侵犯他人合法权益。</p>
+<p>2.4 书库功能仅用于管理<strong>你合法持有</strong>的电子书文件。请勿导入你无权使用的版权内容。</p>
+<h2>3. 数据与隐私</h2>
+<p>3.1 <strong>本软件不上传你的任何数据。</strong> 没有账号系统、没有遥测、没有统计上报。</p>
+<p>3.2 你的全部配置与内容都保存在你自己的电脑上：</p>
+<table>
+<tr><td>内容</td><td>位置</td></tr>
+<tr><td>设置、节点列表、API 密钥</td><td><code>%APPDATA%\dola-toolkit\</code></td></tr>
+<tr><td>书库索引与封面</td><td><code>%APPDATA%\dola-toolkit\library\</code>、<code>covers\</code></td></tr>
+<tr><td>日志</td><td><code>%APPDATA%\dola-toolkit\logs\</code></td></tr>
+</table>
+<p>3.3 若你主动开启 <strong>WebDAV 同步</strong>，书库数据会被同步到你<strong>自己指定的 WebDAV 服务器</strong>；若你配置 <strong>AI 自动归类</strong>，书籍标题与作者会发送给你<strong>自己指定的 AI 接口</strong>。这两项功能默认关闭，且目标地址完全由你控制。</p>
+<p>3.4 卸载本软件不会自动删除上述数据目录；如需彻底清除，请手动删除 <code>%APPDATA%\dola-toolkit</code>。</p>
+<h2>4. 免责声明</h2>
+<p>4.1 本软件按"现状"提供，<strong>不附带任何明示或默示的担保</strong>，包括但不限于适销性、特定用途适用性与不侵权担保。</p>
+<p>4.2 代理功能依赖第三方内核与你自备的节点，其可用性、速度、稳定性与安全性均不受本软件控制。<strong>本软件不对连接中断、速度波动、节点失效或数据泄露承担责任。</strong></p>
+<p>4.3 在适用法律允许的最大范围内，作者与贡献者<strong>不对任何直接、间接、偶然、特殊或后果性损害承担责任</strong>，包括但不限于数据丢失、业务中断、利润损失。</p>
+<p>4.4 你理解并同意：使用本软件的风险由你自己承担。</p>
+<h2>5. 开源与再分发</h2>
+<p>5.1 本软件以 MIT 许可证开源。你可以自由使用、修改、合并、发布、再授权与销售，但<strong>必须保留原始版权声明与许可声明</strong>。</p>
+<p>5.2 如果你分发修改后的版本，请<strong>修改应用名称与图标</strong>，避免与原版混淆；并且不得暗示原作者为你的修改版背书。</p>
+<p>5.3 本软件内含的第三方组件（Electron、React、Xray、sing-box、Mihomo、pdf.js、epub.js 等）各自遵循其原有许可证，详见 <a href="THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a>。</p>
+<h2>6. 协议变更</h2>
+<p>6.1 本协议可能随版本更新而调整，最新版本会随软件一同发布并提交到代码仓库。</p>
+<p>6.2 变更后继续使用本软件，视为接受更新后的协议。</p>
+<h2>7. 其他</h2>
+<p>7.1 本协议部分条款若被认定为无效或不可执行，其余条款仍然有效。</p>
+<p>7.2 对本软件的使用不构成作者与你之间的任何代理、合伙或雇佣关系。</p>
+<hr>
+<p>如果你对本协议有疑问，可以在 &lt;https://github.com/ALpapam/dola-toolkit/issues&gt; 提出。</p>
+</body>
+</html>

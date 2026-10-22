@@ -65,7 +65,9 @@ nsis:
   shortcutName: Dola Toolkit
   uninstallDisplayName: ${productName} ${version}
   artifactName: DolaToolkit-${version}-setup.${ext}
-  license: build/license.txt
+  # HTML licence page: carries its own charset, so it cannot be mis-decoded the
+  # way a BOM-less plain-text licence was (that showed up as mojibake on Chinese Windows)
+  license: build/license.html
   include: build/installer.nsh
   runAfterFinish: true
   menuCategory: false
