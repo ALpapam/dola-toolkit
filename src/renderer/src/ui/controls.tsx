@@ -301,7 +301,14 @@ export function Select({
       : null
 
   return (
-    <Field label={label} hint={hint} outlined={outlined}>
+    /*
+     * Deliberately NOT wrapped in <Field>: Field always draws an `.input-wrap`
+     * (filled surface + bottom border), and the trigger already has its own
+     * outline — nesting them produced a box inside a box. The label and hint are
+     * recreated here without that frame.
+     */
+    <div className={`field ${outlined ? 'field-outlined' : ''}`}>
+      {label ? <span className="field-label">{label}</span> : null}
       <div className={`select ${open ? 'is-open' : ''}`} ref={rootRef}>
         <button
           type="button"
@@ -324,7 +331,8 @@ export function Select({
         </button>
       </div>
       {menu}
-    </Field>
+      {hint ? <span className="field-hint">{hint}</span> : null}
+    </div>
   )
 }
 
