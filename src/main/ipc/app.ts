@@ -10,6 +10,10 @@ import { APP_VERSION } from '@shared/version'
 import { getLogsDir, getSettings, patchSettings } from '../store'
 import { broadcast, getMainWindow, hideMainWindow } from '../window'
 import { proxyManager } from '../proxy/manager'
+import { ensureTray, notifyHidden, trayInfo } from '../tray'
+
+/** the "still running in the background" balloon is shown once per session */
+let hiddenHintShown = false
 
 function appInfo(): AppInfo {
   return {
@@ -93,8 +97,15 @@ export function registerAppIpc(): void {
   const performClose = (closeToTray: boolean): void => {
     const win = getMainWindow()
     if (closeToTray && win) {
+      // The tray icon is what makes "hidden" recoverable: without it the window
+      // would vanish and the process would be unreachable.
+      ensureTray()
       hideMainWindow()
       broadcast('app:hidden-to-background', true)
+      if (!hiddenHintShown) {
+        hiddenHintShown = true
+        notifyHidden()
+      }
       return
     }
     app.quit()
@@ -143,6 +154,8 @@ export function registerAppIpc(): void {
     performClose(closeToTray)
     return true
   })
+
+  ipcMain.handle(IPC.appTrayAvailable, () => trayInfo())
 
   ipcMain.handle(IPC.appOpenExternal, async (_e, url: unknown) => {
     if (!isSafeExternal(url)) return false

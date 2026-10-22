@@ -20,6 +20,13 @@ extraResources:
     to: fonts
     filter:
       - '**/*'
+  # The window icon and the notification-area icon are loaded at runtime from
+  # disk. `files` only ships out/**, so without this the tray image resolves to
+  # nothing and the icon is created but invisible.
+  - from: build/icon.png
+    to: icon.png
+  - from: build/icon.ico
+    to: icon.ico
 win:
   icon: build/icon.ico
   target:

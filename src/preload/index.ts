@@ -17,6 +17,11 @@ const api = {
     onCloseAsk: (cb: () => void) => on(IPC.appCloseAsk, cb),
     resolveClose: (choice: { closeToTray: boolean; remember: boolean }) =>
       ipcRenderer.invoke(IPC.appCloseResolve, choice),
+    trayAvailable: () =>
+      ipcRenderer.invoke(IPC.appTrayAvailable) as Promise<{
+        available: boolean
+        icon: { width: number; height: number } | null
+      }>,
     openExternal: (url: string) => ipcRenderer.invoke(IPC.appOpenExternal, url),
     showItem: (path: string) => ipcRenderer.invoke(IPC.appShowItem, path),
     openLogs: () => ipcRenderer.invoke(IPC.appOpenLogs),

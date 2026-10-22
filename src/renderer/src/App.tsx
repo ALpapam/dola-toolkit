@@ -152,11 +152,19 @@ function useEffectBridge(): ReactNode {
 function ClosePrompt(): JSX.Element | null {
   const [open, setOpen] = useState(false)
   const [remember, setRemember] = useState(true)
+  const [trayOk, setTrayOk] = useState(true)
 
   useEffect(() => {
     const off = window.api.app.onCloseAsk(() => {
       setRemember(true)
       setOpen(true)
+      // Only offer "minimize to tray" when an icon really exists: hiding with no
+      // tray leaves the window unreachable.
+      void window.api.app
+        .trayAvailable()
+        // an icon with no image renders as nothing, so treat that as unavailable
+        .then((info) => setTrayOk(info.available && info.icon !== null))
+        .catch(() => setTrayOk(false))
     })
     return off
   }, [])
@@ -173,7 +181,11 @@ function ClosePrompt(): JSX.Element | null {
       open={open}
       onClose={() => setOpen(false)}
       title="关闭 Dola Toolkit"
-      subtitle="你可以让它在后台继续运行，代理与同步不会中断"
+      subtitle={
+        trayOk
+          ? '你可以让它在后台继续运行，代理与同步不会中断'
+          : '当前会话无法创建托盘图标，只能退出程序'
+      }
       icon="chevronDown"
       width="slim"
       footer={
@@ -181,7 +193,12 @@ function ClosePrompt(): JSX.Element | null {
           <Button variant="text" onClick={() => answer(false)}>
             退出程序
           </Button>
-          <Button variant="filled" icon="chevronDown" onClick={() => answer(true)}>
+          <Button
+            variant="filled"
+            icon="chevronDown"
+            disabled={!trayOk}
+            onClick={() => answer(true)}
+          >
             最小化到托盘
           </Button>
         </>

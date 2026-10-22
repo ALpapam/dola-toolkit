@@ -7,10 +7,11 @@ import { join } from 'node:path'
 import { app, BrowserWindow, Notification, nativeTheme, protocol } from 'electron'
 import { IPC } from '@shared/channels'
 import { initStore, getLogsDir, getSettings, onSettingsChange } from './store'
-import { createMainWindow, getMainWindow, broadcast, showMainWindow } from './window'
+import { createMainWindow, getMainWindow, broadcast, showMainWindow, hideMainWindow } from './window'
 import { computeMonet } from './monet'
 import { proxyManager } from './proxy/manager'
 import { registerAllIpc } from './ipc'
+import { ensureTray, refreshTrayMenu, destroyTray } from './tray'
 
 // ---------------------------------------------------------------------------
 // Global crash guards — installed before anything else can throw.
@@ -122,6 +123,8 @@ if (!gotLock) {
 
 function bootstrap(): void {
   let shuttingDown = false
+/** set once a real close is allowed, so the guard above stops intercepting */
+let allowWindowDestroy = false
 
   app.whenReady().then(
     async () => {
@@ -159,6 +162,49 @@ function bootstrap(): void {
       applyThemeBackground()
       win.on('focus', () => {
         void refreshThemeIfWallpaperChanged()
+      })
+
+      /*
+       * The tray must exist whenever the window can be hidden. It is created up
+       * front when the user has already chosen "minimize to tray", and on demand
+       * the first time the window is hidden — otherwise hiding would leave a
+       * process with no window and no way back.
+       */
+      if (getSettings().general.closeToTray) ensureTray()
+      proxyManager.onState(() => refreshTrayMenu())
+
+      /*
+       * Native close (Alt+F4, taskbar context menu) must follow the same policy as
+       * the custom title bar. Without this the window would be destroyed while the
+       * process kept running, leaving a tray icon whose 「显示」 could not restore
+       * anything.
+       */
+      win.on('close', (event) => {
+        if (allowWindowDestroy || shuttingDown) return
+        let closeToTray = false
+        let asked = false
+        try {
+          const g = getSettings().general
+          closeToTray = g.closeToTray
+          asked = g.closeToTrayAsked === true
+        } catch {
+          /* treat as "not asked yet" */
+        }
+        if (!asked) {
+          // Let the renderer ask; make sure the prompt is actually on screen.
+          event.preventDefault()
+          showMainWindow()
+          broadcast(IPC.appCloseAsk)
+          return
+        }
+        if (closeToTray) {
+          event.preventDefault()
+          ensureTray()
+          hideMainWindow()
+          broadcast('app:hidden-to-background', true)
+          return
+        }
+        allowWindowDestroy = true
       })
 
       // re-apply the persisted system-proxy state only if a core is running;
@@ -231,6 +277,13 @@ function bootstrap(): void {
       flushStore()
     } catch (e) {
       writeCrashLog('shutdown.flush', e)
+    }
+    try {
+      // remove the notification-area icon before the process goes away, or a
+      // ghost icon can linger until the user hovers over it
+      destroyTray()
+    } catch (e) {
+      writeCrashLog('shutdown.tray', e)
     }
   }
 

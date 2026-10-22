@@ -11,6 +11,8 @@ export const IPC = {
   appCloseAsk: 'app:close-ask',
   /** renderer -> main: the answer to that prompt */
   appCloseResolve: 'app:close-resolve',
+  /** whether a tray icon could be created in this session */
+  appTrayAvailable: 'app:tray-available',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
   appCapture: 'app:capture',

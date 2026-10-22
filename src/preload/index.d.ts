@@ -38,6 +38,8 @@ export interface DolaToolkitApi {
     onCloseAsk(cb: () => void): () => void
     /** answers that prompt; remember=true also updates the setting */
     resolveClose(choice: { closeToTray: boolean; remember: boolean }): Promise<boolean>
+    /** false when this session has no notification area; hide-to-tray is unsafe */
+    trayAvailable(): Promise<{ available: boolean; icon: { width: number; height: number } | null }>
     openExternal(url: string): Promise<void>
     showItem(path: string): Promise<void>
     openLogs(): Promise<void>
