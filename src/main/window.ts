@@ -4,7 +4,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { BrowserWindow, app, nativeTheme, shell } from 'electron'
+import { BrowserWindow, Menu, app, nativeTheme, shell } from 'electron'
 import type { Settings } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -133,6 +133,45 @@ export function createMainWindow(settings?: Settings): BrowserWindow {
 
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
+  })
+
+  /*
+   * Right-click menu with the standard editing commands.
+   *
+   * The renderer ships no native menu (the shell draws its own title bar and
+   * removeMenu() clears the default one), so right-clicking a text field did
+   * nothing at all — no copy, no paste. This restores the expected behaviour for
+   * every input, textarea and selectable text in the app, using the edit flags
+   * Chromium reports for the element under the cursor so unavailable actions grey
+   * out instead of silently doing nothing.
+   */
+  win.webContents.on('context-menu', (_event, params) => {
+    const flags = params.editFlags
+    const items: Electron.MenuItemConstructorOptions[] = [
+      { label: '剪切', role: 'cut', enabled: flags.canCut },
+      { label: '复制', role: 'copy', enabled: flags.canCopy },
+      { label: '粘贴', role: 'paste', enabled: flags.canPaste },
+      { type: 'separator' },
+      { label: '全选', role: 'selectAll', enabled: flags.canSelectAll }
+    ]
+    if (params.linkURL) {
+      items.push(
+        { type: 'separator' },
+        {
+          label: '在浏览器中打开链接',
+          click: () => {
+            void shell.openExternal(params.linkURL)
+          }
+        },
+        {
+          label: '复制链接地址',
+          click: () => {
+            void import('electron').then(({ clipboard }) => clipboard.writeText(params.linkURL))
+          }
+        }
+      )
+    }
+    Menu.buildFromTemplate(items).popup({ window: win })
   })
 
   // final safety net: block any permission request the UI never asked for

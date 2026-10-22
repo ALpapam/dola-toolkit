@@ -16,13 +16,8 @@
   gap: var(--sp-5);
   padding: var(--sp-6);
   border-radius: var(--shape-xl);
-  background:
-    radial-gradient(
-      120% 140% at 100% 0%,
-      color-mix(in srgb, var(--md-primary-container) 70%, transparent) 0%,
-      transparent 60%
-    ),
-    var(--md-surface-container-low);
+  /* flat fill: the decorative corner glow made the card look busy */
+  background: var(--md-surface-container-low);
   border: 1px solid color-mix(in srgb, var(--md-outline-variant) 55%, transparent);
   margin-bottom: var(--sp-6);
   overflow: hidden;
@@ -49,7 +44,7 @@
   display: grid;
   place-items: center;
   font-size: 38px;
-  background: linear-gradient(145deg, var(--md-primary), var(--md-tertiary));
+  background: var(--md-primary);
   color: var(--md-on-primary);
   box-shadow: var(--elev-2);
 }
@@ -126,13 +121,7 @@
   gap: var(--sp-5);
   padding: var(--sp-5) var(--sp-6);
   border-radius: var(--shape-xl);
-  background:
-    radial-gradient(
-      140% 160% at 0% 0%,
-      color-mix(in srgb, var(--md-primary-container) 62%, transparent),
-      transparent 58%
-    ),
-    var(--md-surface-container-low);
+  background: var(--md-surface-container-low);
   border: 1px solid color-mix(in srgb, var(--md-outline-variant) 55%, transparent);
   flex: 0 0 auto;
 }
@@ -832,9 +821,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background:
-    radial-gradient(120% 100% at 50% 0%, var(--md-surface-container-low), transparent 70%),
-    var(--md-surface);
+  background: var(--md-surface-container-low);
   padding: 20px 24px 18px;
   perspective: 2000px;
 }
@@ -1102,10 +1089,10 @@
   pointer-events: none;
 }
 .flip-zone.left::after {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--md-primary) 16%, transparent), transparent);
+  background: color-mix(in srgb, var(--md-primary) 14%, transparent);
 }
 .flip-zone.right::after {
-  background: linear-gradient(270deg, color-mix(in srgb, var(--md-primary) 16%, transparent), transparent);
+  background: color-mix(in srgb, var(--md-primary) 14%, transparent);
 }
 .flip-zone:hover::after {
   opacity: 1;

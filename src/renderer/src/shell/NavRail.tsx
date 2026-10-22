@@ -16,6 +16,7 @@ import logoUrl from '../assets/logo-64.png'
 /* ------------------------------------------------------------------ */
 export function NavRail(): JSX.Element {
   const railExpanded = useApp((s) => s.railExpanded)
+  const setPage = useApp((s) => s.setPage)
   const setRailExpanded = useApp((s) => s.setRailExpanded)
   const order = useApp((s) => s.railOrder)
   const setOrder = useApp((s) => s.setRailOrder)
@@ -64,9 +65,17 @@ export function NavRail(): JSX.Element {
     <nav className={`rail ${railExpanded ? 'expanded' : ''}`} aria-label="工具">
       {/* brand — the app icon sits centred on the rail axis when collapsed */}
       <div className="rail-brand" onDoubleClick={() => setRailExpanded(!railExpanded)}>
-        <span className="rail-brand-logo">
+        {/* the brand strip is a window-drag region, and drag regions swallow
+            clicks — the icon opts out of dragging so tapping it can go home */}
+        <button
+          type="button"
+          className="rail-brand-logo"
+          title="返回主页"
+          aria-label="返回主页"
+          onClick={() => setPage('home')}
+        >
           <img src={logoUrl} alt="" draggable={false} />
-        </span>
+        </button>
         <span className="rail-brand-title">
           <span className="rail-brand-name">{APP_NAME}</span>
           <span className="rail-brand-sub">{APP_VERSION_LABEL}</span>

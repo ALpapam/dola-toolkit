@@ -171,12 +171,25 @@ img {
   flex: 0 0 40px;
   width: 40px;
   height: 40px;
+  padding: 0;
+  border: 0;
   border-radius: 13px;
   overflow: hidden;
   display: grid;
   place-items: center;
   background: var(--md-surface-container-highest);
   box-shadow: var(--elev-1);
+  /* the brand strip drags the window, and a drag region swallows clicks — the
+     icon opts out so tapping it can return to the home page */
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  transition: transform var(--dur-2) cubic-bezier(0.2, 0, 0, 1);
+}
+.rail-brand-logo:hover {
+  transform: scale(1.06);
+}
+.rail-brand-logo:active {
+  transform: scale(0.96);
 }
 .rail-brand-logo img {
   width: 100%;

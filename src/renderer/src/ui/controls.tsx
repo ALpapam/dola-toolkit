@@ -147,6 +147,15 @@ export function TextArea({ label, hint, outlined, ...rest }: TextAreaProps): JSX
   )
 }
 
+/**
+ * Dropdown select.
+ *
+ * A native <select> cannot be styled beyond its closed state — Windows renders
+ * the popup itself, so it ignored the theme and looked like a browser default.
+ * This is a button plus a positioned listbox: fully themed, animated open/close,
+ * keyboard operable (↑/↓/Enter/Esc/Home/End), and it flips upward when there is
+ * no room below.
+ */
 export function Select({
   label,
   hint,
@@ -162,18 +171,159 @@ export function Select({
   options: { value: string; label: string }[]
   outlined?: boolean
 }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  /**
+   * Menu geometry in viewport coordinates.
+   *
+   * The list is rendered into a portal rather than inside `.select`, because
+   * dialogs and panels set `overflow: hidden/auto` and would clip it. Fixed
+   * positioning plus a portal keeps it above everything, the way a native popup
+   * behaves.
+   */
+  const [box, setBox] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value)
+  )
+  const current = options[selectedIndex]
+
+  const measure = (): void => {
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const menuHeight = Math.min(options.length * 38 + 16, 288)
+    const up = window.innerHeight - rect.bottom < menuHeight + 12 && rect.top > menuHeight + 12
+    setBox({
+      left: rect.left,
+      top: up ? rect.top - 6 : rect.bottom + 6,
+      width: rect.width,
+      up
+    })
+  }
+
+  const openMenu = (): void => {
+    setActive(selectedIndex)
+    measure()
+    setOpen(true)
+  }
+
+  const commit = (index: number): void => {
+    const option = options[index]
+    if (option) onChange(option.value)
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      const target = e.target as Node
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setOpen(false)
+        triggerRef.current?.focus()
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setActive((i) => Math.min(options.length - 1, i + 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setActive((i) => Math.max(0, i - 1))
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        setActive(0)
+      } else if (e.key === 'End') {
+        e.preventDefault()
+        setActive(options.length - 1)
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        commit(active)
+      } else if (e.key === 'Tab') {
+        setOpen(false)
+      }
+    }
+    // keep the popup attached to its trigger while the page scrolls or resizes
+    const onReflow = (): void => measure()
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey, true)
+    window.addEventListener('resize', onReflow)
+    window.addEventListener('scroll', onReflow, true)
+    const el = menuRef.current?.querySelector<HTMLElement>(`[data-idx="${active}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('resize', onReflow)
+      window.removeEventListener('scroll', onReflow, true)
+    }
+  }, [open, active, options.length])
+
+  const menu =
+    open && box
+      ? createPortal(
+          <div
+            className={`select-menu ${box.up ? 'up' : 'down'}`}
+            role="listbox"
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              left: box.left,
+              width: box.width,
+              ...(box.up
+                ? { bottom: Math.max(8, window.innerHeight - box.top) }
+                : { top: box.top })
+            }}
+          >
+            {options.map((o, i) => (
+              <button
+                type="button"
+                key={o.value}
+                data-idx={i}
+                role="option"
+                aria-selected={o.value === value}
+                className={`select-option ${o.value === value ? 'sel' : ''} ${i === active ? 'active' : ''}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => commit(i)}
+              >
+                <span className="select-option-label">{o.label}</span>
+                {o.value === value ? <Icon name="check" size={17} /> : null}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      : null
+
   return (
     <Field label={label} hint={hint} outlined={outlined}>
-      <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <span className="select-caret">
-        <Icon name="expandMore" size={20} />
-      </span>
+      <div className={`select ${open ? 'is-open' : ''}`} ref={rootRef}>
+        <button
+          type="button"
+          ref={triggerRef}
+          className="select-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => (open ? setOpen(false) : openMenu())}
+          onKeyDown={(e) => {
+            if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault()
+              openMenu()
+            }
+          }}
+        >
+          <span className="select-value">{current?.label ?? '请选择'}</span>
+          <span className="select-caret" aria-hidden>
+            <Icon name="expandMore" size={20} />
+          </span>
+        </button>
+      </div>
+      {menu}
     </Field>
   )
 }
