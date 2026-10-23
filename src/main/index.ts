@@ -12,6 +12,7 @@ import { computeMonet } from './monet'
 import { proxyManager } from './proxy/manager'
 import { registerAllIpc } from './ipc'
 import { ensureTray, refreshTrayMenu, destroyTray } from './tray'
+import { takeResumeProxy } from './resume'
 
 // ---------------------------------------------------------------------------
 // Global crash guards — installed before anything else can throw.
@@ -101,10 +102,31 @@ protocol.registerSchemesAsPrivileged([
 app.setAppUserModelId('io.dola.toolkit')
 app.setName('Dola Toolkit')
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
-} else {
+/**
+ * Acquire the single-instance lock, waiting briefly if a restart is in flight.
+ *
+ * `app.relaunch()` starts the new process while the old one is still shutting down
+ * and still holds the lock, so the newcomer used to take the "another instance is
+ * running" branch and quit — the restart appeared to do nothing. Waiting a few
+ * seconds only when a restart was requested fixes that without letting a genuine
+ * second launch linger.
+ */
+const restartInFlight = process.argv.includes('--relaunch')
+async function acquireSingleInstanceLock(): Promise<boolean> {
+  if (app.requestSingleInstanceLock()) return true
+  if (!restartInFlight) return false
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250))
+    if (app.requestSingleInstanceLock()) return true
+  }
+  return false
+}
+
+void acquireSingleInstanceLock().then((gotLock) => {
+  if (!gotLock) {
+    app.quit()
+    return
+  }
   app.on('second-instance', () => {
     // also covers the "closeToTray hid the window" case
     showMainWindow()
@@ -115,7 +137,7 @@ if (!gotLock) {
     }
   })
   bootstrap()
-}
+})
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -217,7 +239,12 @@ let allowWindowDestroy = false
 
       // re-apply the persisted system-proxy state only if a core is running;
       // never silently hijack the OS proxy on boot.
-      if (getSettings().proxy.autoStart) {
+      // `resume` is set when an in-app core update restarted the app: the proxy
+      // that update had to stop should come back even without 开机自启.
+      const resume = takeResumeProxy()
+      if (resume) {
+        void startProxyIfConfigured(true)
+      } else if (getSettings().proxy.autoStart) {
         void startProxyIfConfigured()
       }
 
@@ -329,10 +356,18 @@ let allowWindowDestroy = false
     }
   }
 
-  async function startProxyIfConfigured(): Promise<void> {
+  /**
+   * Brings the proxy back up on launch.
+   *
+   * `force` is used by the resume path: an in-app core update restarts the app, and
+   * the user's choice to keep their proxy running must not depend on the separate
+   * 「启动时自动开启」 setting — which is exactly what the early `autoStart` return
+   * below used to break, leaving them silently offline after an update.
+   */
+  async function startProxyIfConfigured(force = false): Promise<void> {
     try {
       const settings = getSettings()
-      if (!settings.proxy.autoStart) return
+      if (!force && !settings.proxy.autoStart) return
       const state = proxyManager.state()
       if (!state.selectedNodeId) return
       await proxyManager.start()

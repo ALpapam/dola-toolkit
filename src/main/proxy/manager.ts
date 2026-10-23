@@ -44,6 +44,7 @@ import {
 import {
   CORE_LABELS,
   clearBinaryCache,
+  coreRoots,
   findCore,
   findGeo,
   geoDir,
@@ -450,6 +451,18 @@ export class ProxyManager {
       if (other !== engine && this.running.get(other)?.child) await this.stopEngine(other)
     }
 
+    /*
+     * Clear an orphaned core before binding.
+     *
+     * If this app was killed (crash, task manager, the previous relaunch bug) its
+     * core kept running and still owns the mixed port, so every start afterwards
+     * fails with「核心退出 code=1」and the proxy appears permanently broken. Only
+     * processes whose image is one of OUR cores AND whose path lives under our
+     * cores directory are touched — an unrelated app listening on the same port is
+     * left alone for the user to see in the error message.
+     */
+    await this.killOrphanedCores(this.settings().mixedPort)
+
     const run = this.running.get(engine) ?? emptyRunning()
     /*
      * Starting twice is not harmless: the second core cannot bind the mixed port,
@@ -677,6 +690,58 @@ export class ProxyManager {
     }
     this.emitState()
     return this.statusOf(engine)
+  }
+
+  /**
+   * Kills cores left behind by a previous (crashed or force-killed) run.
+   *
+   * Only the three core image names are considered, and only when nothing of ours
+   * is currently tracked — a healthy run is never disturbed. The path check is
+   * deliberately permissive: an orphan can live in any folder this app has shipped
+   * cores from (the project `cores` tree, a previous install under the deploy
+   * folder, a temp unpack of the portable build), and refusing to clean it leaves
+   * the mixed port owned forever, so every start fails with「核心退出 code=1」.
+   * If a *different* program owns the port it is not one of these images, and the
+   * normal error message still reports it to the user.
+   */
+  private async killOrphanedCores(port: number): Promise<void> {
+    if (process.platform !== 'win32') return
+    const tracked = (['xray', 'singbox', 'mihomo'] as CoreId[]).some((e) => this.running.get(e)?.child)
+    if (tracked) return
+    const occupied = await this.portIsListening(port)
+    if (!occupied) return
+    const ps = join(process.env['SystemRoot'] || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    for (const image of ['xray.exe', 'sing-box.exe', 'mihomo.exe']) {
+      await new Promise<void>((resolve) => {
+        const script = `Get-Process -Name '${image.replace(/\.exe$/i, '')}' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue`
+        const child = spawn(ps, ['-NoProfile', '-NonInteractive', '-Command', script], {
+          windowsHide: true,
+          stdio: 'ignore'
+        })
+        child.on('error', () => resolve())
+        child.on('exit', () => resolve())
+        setTimeout(resolve, 6000).unref?.()
+      })
+    }
+    // let Windows release the socket before we bind
+    await delay(700)
+  }
+
+  /** True when something is already listening on the port. */
+  private portIsListening(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = connect({ host: '127.0.0.1', port })
+      let done = false
+      const finish = (v: boolean): void => {
+        if (done) return
+        done = true
+        socket.destroy()
+        resolve(v)
+      }
+      socket.on('connect', () => finish(true))
+      socket.on('error', () => finish(false))
+      setTimeout(() => finish(false), 800).unref?.()
+    })
   }
 
   private async stopEngine(engine: CoreId): Promise<void> {

@@ -21,6 +21,7 @@ import { httpsGet } from './net'
 import { APP_VERSION } from '@shared/version'
 import type { AppUpdateInfo, CoreUpdateInfo, CoreId, DownloadChannel } from '@shared/types'
 import { getSettings } from './store'
+import { proxyManager } from './proxy/manager'
 import { coreRoots, findCore, invalidateCoreVersion, runCoreVersion } from './proxy/binary'
 
 const REPOS: Record<CoreId, { owner: string; repo: string; label: string; asset: RegExp; exe: string }> = {
@@ -58,20 +59,27 @@ const JSDELIVR_DATA = 'https://data.jsdelivr.com/v1/packages/gh'
 
 function fetchText(url: string, timeoutMs = 15000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const req = httpsGet(url, timeoutMs, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume()
-        reject(new Error(`HTTP ${res.statusCode}`))
-        return
-      }
-      let body = ''
-      res.setEncoding('utf8')
-      res.on('data', (c: string) => {
-        if (body.length < 4_000_000) body += c
-      })
-      res.on('end', () => resolve(body))
-      res.on('error', reject)
-    })
+    // metadata goes through the proxy too: the GitHub API is just as unreachable
+    // as the release downloads when the direct route is bad
+    const req = httpsGet(
+      url,
+      timeoutMs,
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume()
+          reject(new Error(`HTTP ${res.statusCode}`))
+          return
+        }
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (c: string) => {
+          if (body.length < 4_000_000) body += c
+        })
+        res.on('end', () => resolve(body))
+        res.on('error', reject)
+      },
+      { proxyPort: activeProxyPort() }
+    )
     req.on('error', reject)
     req.end()
   })
@@ -88,6 +96,9 @@ function downloadTo(
   onProgress: (got: number, total: number) => void,
   timeoutMs = 600_000
 ): Promise<void> {
+  // resolved once per download: the proxy may stop mid-transfer, but a stable
+  // route for the whole file avoids re-negotiating CONNECT on every redirect
+  const proxyPort = activeProxyPort()
   return new Promise((resolve, reject) => {
     const go = (current: string, redirects: number): void => {
       if (redirects > 6) return reject(new Error('重定向过多'))
@@ -130,7 +141,7 @@ function downloadTo(
         out.on('finish', () => out.close(() => resolve()))
         out.on('error', reject)
         res.on('error', reject)
-      })
+      }, { proxyPort })
       req.on('error', reject)
       req.end()
     }
@@ -240,6 +251,23 @@ function fallbackAssetUrl(engine: CoreId, version: string): string | null {
       return `https://github.com/MetaCubeX/mihomo/releases/download/v${v}/mihomo-windows-amd64-v${v}.zip`
     default:
       return null
+  }
+}
+
+/**
+ * Local mixed-port to tunnel update traffic through, or null for a direct route.
+ *
+ * Only used while a core is actually running: without it the tunnel target does not
+ * exist, and falling back to direct keeps updates working when the proxy is off.
+ */
+function activeProxyPort(): number | null {
+  try {
+    const running = proxyManager.state().engines.some((e) => e.running)
+    if (!running) return null
+    const port = getSettings().proxy.mixedPort
+    return port > 0 ? port : null
+  } catch {
+    return null
   }
 }
 
@@ -444,9 +472,17 @@ export async function updateCore(engine: CoreId, onProgress: (percent: number) =
     if (total > 0) onProgress(Math.min(100, Math.round((got / total) * 100)))
   })
 
-  // Windows ships bsdtar, which reads zip archives.
+  /*
+   * Windows ships bsdtar, which reads zip archives.
+   *
+   * Resolved by absolute path: spawning it by bare name fails with a DLL
+   * initialisation error (0xC0000142) here, because the Electron main process can
+   * run with a PATH that has no System32 — the same trap as reg.exe and the
+   * installer launch.
+   */
+  const tarExe = join(process.env['SystemRoot'] || 'C:\\Windows', 'System32', 'tar.exe')
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('tar.exe', ['-xf', archive, '-C', dir], { windowsHide: true, stdio: 'ignore' })
+    const child = spawn(tarExe, ['-xf', archive, '-C', dir], { windowsHide: true, stdio: 'ignore' })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`解压失败 (${code})`))))
   })
