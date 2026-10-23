@@ -32,6 +32,13 @@
   ${If} $LANGUAGE == ${LANG_SIMPCHINESE}
     !insertmacro renameShortcut "Dola Toolkit" "多拉工具箱"
   ${EndIf}
+
+  ; The finish page launches `$launchLink`, which installSection.nsh had already
+  ; pointed at the start-menu shortcut under its English name. Renaming it left
+  ; that path dangling, so ticking 「启动 Dola Toolkit」 and pressing Finish did
+  ; nothing. Point the launch at the executable itself — independent of how the
+  ; shortcut ended up being named.
+  StrCpy $launchLink "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
 !macroend
 
 ; ---------------------------------------------------------------------------
