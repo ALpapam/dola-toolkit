@@ -78,10 +78,23 @@ function existsNonEmpty(file: string): boolean {
   }
 }
 
+/**
+ * Absolute path to reg.exe.
+ *
+ * The main process can inherit a PATH without System32 (portable exe, launched
+ * from a minimal shell), and xecFile('reg.exe') then fails with ENOENT — the
+ * wallpaper lookup would silently fall back to the default palette.
+ */
+function regExe(): string {
+  const root = process.env['SystemRoot'] || process.env['windir'] || 'C:\\Windows'
+  const abs = join(root, 'System32', 'reg.exe')
+  return existsSync(abs) ? abs : 'reg.exe'
+}
+
 function registryQuery(hive: string, key: string, value: string): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
-      'reg.exe',
+      regExe(),
       ['query', key, '/v', value],
       { windowsHide: true, timeout: 3000, encoding: 'utf8' },
       (err, stdout) => {

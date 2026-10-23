@@ -338,24 +338,29 @@ export async function downloadAppUpdate(onProgress: (percent: number) => void): 
  */
 export async function installAppUpdate(installerPath: string): Promise<void> {
   if (!existsSync(installerPath)) throw new Error('安装包不存在，请重新下载')
-  const args = [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `Start-Process -FilePath '${installerPath.replace(/'/g, "''")}' -Verb RunAs`
-  ]
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn('powershell.exe', args, { windowsHide: true, stdio: 'ignore' })
-    child.on('error', reject)
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`启动安装程序失败 (${code})`))))
-  })
-  // mark that the next start should confirm the update
+
+  /*
+   * Launching the installer through the shell is enough: its own manifest requests
+   * administrator rights, so Windows raises the UAC prompt. The previous version
+   * wrapped this in `spawn('powershell.exe', … )`, which fails with
+   * "spawn powershell.exe ENOENT" — the Electron main process can run with a PATH
+   * that has no System32 (the same trap that broke reg.exe and the tray earlier).
+   */
   try {
     writeFileSync(join(app.getPath('userData'), 'update-pending.json'), JSON.stringify({ at: Date.now(), path: installerPath }))
   } catch {
-    /* non-fatal */
+    /* non-fatal: only used to confirm the update on the next start */
   }
-  app.quit()
+
+  const failure = await shell.openPath(installerPath)
+  if (failure) {
+    // openPath returns a message instead of throwing; try a detached spawn too
+    const child = spawn(installerPath, [], { detached: true, stdio: 'ignore' })
+    child.unref()
+  }
+
+  // give the installer a moment to start before this process exits
+  setTimeout(() => app.quit(), 1200)
 }
 
 // ---------------------------------------------------------------------------
