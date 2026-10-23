@@ -139,6 +139,13 @@ export interface GeneralSettings {
    * window asks instead of guessing.
    */
   closeToTrayAsked: boolean
+  /**
+   * Where update metadata and downloads come from.
+   *   github — authoritative: always the newest release, but can be slow or
+   *            unreachable from mainland China
+   *   mirror — jsDelivr metadata + gh-proxy downloads: fast, may lag behind
+   */
+  downloadChannel: 'github' | 'mirror'
   launchAtLogin: boolean
   checkUpdates: boolean
 }
@@ -518,6 +525,43 @@ export interface NavTool {
   icon: string
   order: number
   visible: boolean
+}
+
+/** Result of checking the app itself against the latest release. */
+export interface AppUpdateInfo {
+  current: string
+  latest: string | null
+  updateAvailable: boolean
+  channel: DownloadChannel
+  downloadUrl: string | null
+  notes: string | null
+  publishedAt: string | null
+  error: string | null
+}
+
+export type DownloadChannel = 'github' | 'mirror'
+
+/** Result of checking one proxy core against its upstream release. */
+export interface CoreUpdateInfo {
+  engine: CoreId
+  label: string
+  /** null when the core is not installed at all */
+  local: string | null
+  latest: string | null
+  /** no local binary → offer a download instead of an update */
+  missing: boolean
+  updateAvailable: boolean
+  channel: DownloadChannel
+  assetUrl: string | null
+  error: string | null
+}
+
+export interface UpdateProgress {
+  kind: 'app' | 'core'
+  engine?: CoreId
+  percent: number
+  state: 'downloading' | 'done' | 'error'
+  message?: string
 }
 
 export interface AppInfo {

@@ -59,6 +59,7 @@ export default function App(): JSX.Element {
   }, [setSettings, setReady, setFonts, setReadingFamily, themeSettings, refresh])
 
   const onToastBridge = useEffectBridge()
+  const updateNudge = useUpdateNudge()
 
   // Keep the store in sync for writes that did not come from this component's
   // own patch() call (main broadcasts on every settings write). Without this a
@@ -126,6 +127,7 @@ export default function App(): JSX.Element {
         </div>
       ) : null}
       {onToastBridge}
+      {updateNudge}
     </div>
   )
 }
@@ -137,6 +139,52 @@ function useEffectBridge(): ReactNode {
       void import('./ui/toast').then((m) => m.useToasts.getState().push(t.kind, t.message))
     })
     return off
+  }, [])
+  return null
+}
+
+/**
+ * Background update nudge.
+ *
+ * Runs once per launch, a few seconds after the window is up so it never competes
+ * with the first paint. A new app version produces a toast pointing at the About
+ * page; an installed core that is behind simply gets a quieter note.
+ *
+ * The pending-update marker covers the other direction: when the previous session
+ * installed an update, this launch confirms that it worked.
+ */
+function useUpdateNudge(): ReactNode {
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const toast = (await import('./ui/toast')).toast
+        try {
+          const pending = await window.api.app.takePendingUpdate()
+          if (!cancelled && pending) {
+            toast.success('已更新到最新版本')
+          }
+          const [app, cores] = await Promise.all([
+            window.api.app.checkAppUpdate(),
+            window.api.app.checkCoreUpdates()
+          ])
+          if (cancelled) return
+          if (app.updateAvailable && app.latest) {
+            toast.info(`发现新版本 ${app.latest}，可在「设置 → 关于」中更新`)
+          }
+          const behind = cores.filter((c) => c.updateAvailable)
+          if (behind.length > 0) {
+            toast.info(`${behind.map((c) => c.label).join(' / ')} 内核可更新`)
+          }
+        } catch {
+          /* offline or rate-limited — stay quiet */
+        }
+      })()
+    }, 6000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [])
   return null
 }

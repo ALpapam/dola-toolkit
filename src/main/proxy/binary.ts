@@ -275,6 +275,15 @@ function extractVersion(engine: CoreId, raw: string): string | null {
 }
 
 /** Runs `<core> --version` once (3 s cap) and caches the parsed version string. */
+/**
+ * Drops the cached "exe -version" result for an engine.
+ * Called after an in-app core update replaces the binary, otherwise the UI keeps
+ * showing the old version until the app restarts.
+ */
+export function invalidateCoreVersion(engine: CoreId): void {
+  versionCache.delete(engine)
+}
+
 export function runCoreVersion(engine: CoreId): Promise<string | null> {
   if (versionCache.has(engine)) return Promise.resolve(versionCache.get(engine) ?? null)
   const bin = findCore(engine)

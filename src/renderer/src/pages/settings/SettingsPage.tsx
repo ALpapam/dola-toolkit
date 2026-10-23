@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AIChatResult, AIStatus, AppInfo, Settings, SettingsPatch, SyncStatus } from '@shared/types'
+import type { AIChatResult, AIStatus, AppInfo, AppUpdateInfo, CoreUpdateInfo, Settings, SettingsPatch, SyncStatus } from '@shared/types'
 import { useApp } from '../../state/app'
 import { useTheme } from '../../theme/store'
 import { Button, Dialog, IconButton, Segmented, Select, SettingRow, Slider, Spinner, Switch, TextArea, TextInput } from '../../ui/controls'
@@ -1152,6 +1152,23 @@ function GeneralSection({ settings, patch }: { settings: Settings; patch: (p: Se
         <SettingRow title="开机自启" desc="登录 Windows 后自动启动 Dola Toolkit">
           <Switch checked={g.launchAtLogin} onChange={(v) => void patch({ general: { launchAtLogin: v } })} />
         </SettingRow>
+        <SettingRow
+          title="更新下载渠道"
+          desc={
+            g.downloadChannel === 'github'
+              ? 'GitHub 官方渠道 —— 最新版本，但国内可能较慢或连接不稳定'
+              : '国内镜像站 —— 速度快，但版本可能不是最新'
+          }
+        >
+          <Segmented
+            value={g.downloadChannel}
+            onChange={(v) => void patch({ general: { downloadChannel: v as 'github' | 'mirror' } })}
+            options={[
+              { value: 'github', icon: 'cloud', label: 'GitHub 官方' },
+              { value: 'mirror', icon: 'bolt', label: '国内镜像' }
+            ]}
+          />
+        </SettingRow>
         <SettingRow title="重置全部设置" desc="恢复默认配置，不影响书库与节点">
           <Button variant="danger" icon="restore" onClick={() => setConfirmReset(true)}>
             重置
@@ -1271,6 +1288,156 @@ function AboutSection(): JSX.Element {
         Dola Toolkit 使用 Electron + React 构建，图标来自 Material Symbols（Apache-2.0），
         代理内核为 Xray / Mihomo / Sing-box（各自遵循其原始许可）。
       </p>
+      <UpdateSection />
+    </>
+  )
+}
+
+/* ================================================================== */
+/* 版本更新                                                             */
+/* ================================================================== */
+function UpdateSection(): JSX.Element {
+  const [appInfo, setAppInfo] = useState<AppUpdateInfo | null>(null)
+  const [cores, setCores] = useState<CoreUpdateInfo[] | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [percent, setPercent] = useState<number | null>(null)
+  const [busyCore, setBusyCore] = useState<string | null>(null)
+  const [installerPath, setInstallerPath] = useState<string | null>(null)
+
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      const [a, c] = await Promise.all([window.api.app.checkAppUpdate(), window.api.app.checkCoreUpdates()])
+      setAppInfo(a)
+      setCores(c)
+      if (!a.error && !a.updateAvailable) toast.success(`已是最新版本 ${a.current}`)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    const off = window.api.app.onUpdateProgress((p) => {
+      if (p.state === 'downloading') setPercent(p.percent)
+      else setPercent(null)
+      if (p.state === 'error' && p.message) toast.error(p.message)
+    })
+    void check()
+    return off
+  }, [])
+
+  const downloadAndInstall = async (): Promise<void> => {
+    const res = await window.api.app.downloadAppUpdate()
+    if (!res.ok || !res.path) {
+      toast.error(res.error ?? '下载失败')
+      return
+    }
+    setInstallerPath(res.path)
+    setPercent(null)
+    toast.success('下载完成，点击「安装并重启」完成更新')
+  }
+
+  const install = async (): Promise<void> => {
+    if (!installerPath) return
+    toast.info('即将退出并启动安装程序，请按提示完成安装')
+    const res = await window.api.app.installAppUpdate(installerPath)
+    if (!res.ok) toast.error(res.error ?? '安装失败')
+  }
+
+  const updateCoreNow = async (engine: string): Promise<void> => {
+    setBusyCore(engine)
+    try {
+      const res = await window.api.app.updateCore(engine)
+      if (res.ok) {
+        toast.success('内核已更新，重新启动代理后生效')
+        await check()
+      } else {
+        toast.error(res.error ?? '更新失败')
+      }
+    } finally {
+      setBusyCore(null)
+    }
+  }
+
+  const appState = appInfo?.error
+    ? appInfo.error
+    : appInfo?.updateAvailable
+      ? `发现新版本 ${appInfo.latest}（当前 ${appInfo.current}）`
+      : appInfo
+        ? `已是最新版本（${appInfo.current}）`
+        : '尚未检查'
+
+  return (
+    <>
+      <h2 className="set-section-title" style={{ marginTop: 24 }}>
+        <Icon name="update" size={20} /> 版本更新
+      </h2>
+      <div className="set-card">
+        <SettingRow
+          title="软件版本"
+          desc={
+            appState +
+            (appInfo?.channel === 'mirror' ? ' · 使用国内镜像站' : ' · 使用 GitHub 官方渠道')
+          }
+        >
+          <div className="hstack" style={{ gap: 8 }}>
+            <Button variant="tonal" size="sm" icon="refresh" loading={checking} onClick={() => void check()}>
+              检查更新
+            </Button>
+            {appInfo?.updateAvailable ? (
+              percent !== null ? (
+                <Button variant="filled" size="sm" icon="download" disabled>
+                  {percent}%
+                </Button>
+              ) : installerPath ? (
+                <Button variant="filled" size="sm" icon="check" onClick={() => void install()}>
+                  安装并重启
+                </Button>
+              ) : (
+                <Button variant="filled" size="sm" icon="download" onClick={() => void downloadAndInstall()}>
+                  下载更新
+                </Button>
+              )
+            ) : null}
+          </div>
+        </SettingRow>
+
+        {(cores ?? []).map((c) => (
+          <SettingRow
+            key={c.engine}
+            title={`${c.label} 内核`}
+            desc={
+              c.error
+                ? c.error
+                : c.missing
+                  ? '未安装 · 可在此下载'
+                  : c.updateAvailable
+                    ? `有可用更新：${c.local} → ${c.latest}`
+                    : `已是最新版本（${c.local}）`
+            }
+          >
+            {c.updateAvailable || c.missing ? (
+              <Button
+                variant="tonal"
+                size="sm"
+                icon={c.missing ? 'download' : 'update'}
+                loading={busyCore === c.engine}
+                onClick={() => void updateCoreNow(c.engine)}
+              >
+                {c.missing ? '下载' : '更新'}
+              </Button>
+            ) : (
+              <span className="tiny muted">{c.local ?? '—'}</span>
+            )}
+          </SettingRow>
+        ))}
+
+        <SettingRow title="更新渠道" desc="可在「通用」中切换 GitHub 官方或国内镜像站">
+          <Button variant="text" size="sm" icon="open" onClick={() => void window.api.app.openReleases()}>
+            打开发布页
+          </Button>
+        </SettingRow>
+      </div>
     </>
   )
 }

@@ -46,6 +46,14 @@ export interface DolaToolkitApi {
     /** page-turn snapshot of a rect inside the window content (data URL) */
     capture(rect: { x: number; y: number; width: number; height: number }): Promise<string | null>
     setTitleBarTheme(dark: boolean): void
+    checkAppUpdate(): Promise<import('@shared/types').AppUpdateInfo>
+    checkCoreUpdates(): Promise<import('@shared/types').CoreUpdateInfo[]>
+    downloadAppUpdate(): Promise<{ ok: boolean; path?: string; error?: string }>
+    installAppUpdate(installerPath: string): Promise<{ ok: boolean; error?: string }>
+    updateCore(engine: string): Promise<{ ok: boolean; path?: string; error?: string }>
+    takePendingUpdate(): Promise<{ from: string } | null>
+    openReleases(): Promise<boolean>
+    onUpdateProgress(cb: (p: import('@shared/types').UpdateProgress) => void): () => void
   }
   settings: {
     get(): Promise<Settings>

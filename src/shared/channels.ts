@@ -13,6 +13,15 @@ export const IPC = {
   appCloseResolve: 'app:close-resolve',
   /** whether a tray icon could be created in this session */
   appTrayAvailable: 'app:tray-available',
+  /** update checks + in-app download/install */
+  updateCheckApp: 'update:check-app',
+  updateCheckCores: 'update:check-cores',
+  updateDownloadApp: 'update:download-app',
+  updateInstallApp: 'update:install-app',
+  updateCore: 'update:core',
+  updateTakePending: 'update:take-pending',
+  updateProgress: 'update:progress',
+  updateOpenReleases: 'update:open-releases',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
   appCapture: 'app:capture',
