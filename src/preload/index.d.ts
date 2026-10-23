@@ -51,6 +51,7 @@ export interface DolaToolkitApi {
     downloadAppUpdate(): Promise<{ ok: boolean; path?: string; error?: string }>
     installAppUpdate(installerPath: string): Promise<{ ok: boolean; error?: string }>
     updateCore(engine: string): Promise<{ ok: boolean; path?: string; error?: string }>
+    updateAllCores(): Promise<{ updated: string[]; failed: { engine: string; error: string }[] }>
     takePendingUpdate(): Promise<{ from: string } | null>
     openReleases(): Promise<boolean>
     onUpdateProgress(cb: (p: import('@shared/types').UpdateProgress) => void): () => void

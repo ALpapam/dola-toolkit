@@ -105,10 +105,27 @@ function downloadTo(
         const total = Number(res.headers['content-length'] ?? 0)
         let got = 0
         const out = createWriteStream(target)
+        /*
+         * A stalled connection must not hang the update forever. GitHub release
+         * downloads can sit at 0 bytes for minutes on a bad route, so the transfer
+         * is aborted when nothing arrives for a while — the UI can then fall back to
+         * the mirror or report a clear error.
+         */
+        let idle = setTimeout(() => {
+          try {
+            req.destroy(new Error('下载停滞，请尝试切换为国内镜像站'))
+          } catch {
+            /* ignore */
+          }
+        }, 60_000)
         res.on('data', (c: Buffer) => {
+          clearTimeout(idle)
+          idle = setTimeout(() => req.destroy(new Error('下载停滞，请尝试切换为国内镜像站')), 60_000)
           got += c.length
           onProgress(got, total)
         })
+        res.on('end', () => clearTimeout(idle))
+        res.on('error', () => clearTimeout(idle))
         res.pipe(out)
         out.on('finish', () => out.close(() => resolve()))
         out.on('error', reject)

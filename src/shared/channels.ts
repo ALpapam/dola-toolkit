@@ -19,6 +19,7 @@ export const IPC = {
   updateDownloadApp: 'update:download-app',
   updateInstallApp: 'update:install-app',
   updateCore: 'update:core',
+  updateAllCores: 'update:all-cores',
   updateTakePending: 'update:take-pending',
   updateProgress: 'update:progress',
   updateOpenReleases: 'update:open-releases',

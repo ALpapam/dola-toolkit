@@ -98,6 +98,37 @@ export function registerUpdatesIpc(): void {
     }
   })
 
+  ipcMain.handle(IPC.updateAllCores, async () => {
+    const updated: string[] = []
+    const failed: { engine: string; error: string }[] = []
+    try {
+      const list = await checkCoreUpdates()
+      const behind = list.filter((c) => c.updateAvailable && c.assetUrl)
+      // stop once: every replacement needs the exe unlocked
+      if (behind.length > 0) await proxyManager.stop()
+      for (const item of behind) {
+        try {
+          let last = -1
+          await updateCore(item.engine, (percent) => {
+            if (percent !== last) {
+              last = percent
+              emit({ kind: 'core', engine: item.engine, percent, state: 'downloading' })
+            }
+          })
+          emit({ kind: 'core', engine: item.engine, percent: 100, state: 'done' })
+          updated.push(item.label)
+        } catch (e) {
+          const message = e instanceof Error ? e.message : '更新失败'
+          emit({ kind: 'core', engine: item.engine, percent: 0, state: 'error', message })
+          failed.push({ engine: item.label, error: message })
+        }
+      }
+    } catch (e) {
+      failed.push({ engine: '检查', error: e instanceof Error ? e.message : '更新失败' })
+    }
+    return { updated, failed }
+  })
+
   ipcMain.handle(IPC.updateTakePending, () => takePendingUpdate())
 
   ipcMain.handle(IPC.updateOpenReleases, () => {

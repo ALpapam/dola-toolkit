@@ -98,7 +98,9 @@ export const DEFAULT_SETTINGS: Settings = {
     zoom: 1,
     closeToTray: false,
     closeToTrayAsked: false,
-    downloadChannel: 'github',
+    // mirror by default: GitHub release downloads are often unusable from mainland
+    // China, and a slow update is worse than a slightly older one
+    downloadChannel: 'mirror',
     launchAtLogin: false,
     checkUpdates: true
   }
@@ -337,7 +339,7 @@ function normalizeSettings(): void {
   const g = settings.general
   g.zoom = clampNum(g.zoom, 0.5, 3, 1)
   if (g.language !== 'zh' && g.language !== 'en') g.language = 'zh'
-  if (g.downloadChannel !== 'github' && g.downloadChannel !== 'mirror') g.downloadChannel = 'github'
+  if (g.downloadChannel !== 'github' && g.downloadChannel !== 'mirror') g.downloadChannel = 'mirror'
   for (const k of ['closeToTray', 'closeToTrayAsked', 'launchAtLogin', 'checkUpdates'] as const) {
     if (typeof g[k] !== 'boolean') g[k] = DEFAULT_SETTINGS.general[k]
   }

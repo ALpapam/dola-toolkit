@@ -7,6 +7,7 @@ import { engineLabel, fmtDuration, formatProtocol } from '../../ui/format'
 import { AddNodeDialog } from './AddNodeDialog'
 import { ImportDialog } from './ImportDialog'
 import { GeoDialog } from './GeoDialog'
+import { CoreUpdateDialog } from './CoreUpdateDialog'
 
 export function ProxyPage(): JSX.Element {
   const [state, setState] = useState<ProxyState | null>(null)
@@ -21,6 +22,9 @@ export function ProxyPage(): JSX.Element {
   const [importOpen, setImportOpen] = useState(false)
   const [geoOpen, setGeoOpen] = useState(false)
   const [filter, setFilter] = useState('')
+  /** core update dialog + how many cores are behind (badge on the chip) */
+  const [coreUpdateOpen, setCoreUpdateOpen] = useState(false)
+  const [coreUpdates, setCoreUpdates] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +49,23 @@ export function ProxyPage(): JSX.Element {
       clearInterval(t)
     }
   }, [load])
+
+  /**
+   * How many cores are behind — shown on the 内核更新 chip so it is obvious at a
+   * glance whether anything needs attention. Silent on failure (offline).
+   */
+  const refreshCoreUpdates = useCallback(async () => {
+    try {
+      const list = await window.api.app.checkCoreUpdates()
+      setCoreUpdates(list.filter((c) => c.updateAvailable).length)
+    } catch {
+      /* offline or rate-limited */
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshCoreUpdates()
+  }, [refreshCoreUpdates])
 
   const activeStatus = state?.engines.find((e) => e.running) ?? null
   const selected = state?.nodes.find((n) => n.id === state.selectedNodeId) ?? null
@@ -202,6 +223,10 @@ export function ProxyPage(): JSX.Element {
               }}
             >
               内核：{engineLabel(state.activeEngine)}
+            </Chip>
+            <Chip icon="update" onClick={() => setCoreUpdateOpen(true)}>
+              内核更新
+              {coreUpdates > 0 ? ` · ${coreUpdates}` : ''}
             </Chip>
           </div>
         </div>
@@ -481,6 +506,14 @@ export function ProxyPage(): JSX.Element {
         }}
       />
       <GeoDialog open={geoOpen} onClose={() => setGeoOpen(false)} state={state} onChanged={load} />
+      <CoreUpdateDialog
+        open={coreUpdateOpen}
+        onClose={() => setCoreUpdateOpen(false)}
+        onFinished={() => {
+          void refreshCoreUpdates()
+          void load()
+        }}
+      />
     </div>
   )
 }

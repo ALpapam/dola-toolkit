@@ -1298,18 +1298,15 @@ function AboutSection(): JSX.Element {
 /* ================================================================== */
 function UpdateSection(): JSX.Element {
   const [appInfo, setAppInfo] = useState<AppUpdateInfo | null>(null)
-  const [cores, setCores] = useState<CoreUpdateInfo[] | null>(null)
   const [checking, setChecking] = useState(false)
   const [percent, setPercent] = useState<number | null>(null)
-  const [busyCore, setBusyCore] = useState<string | null>(null)
   const [installerPath, setInstallerPath] = useState<string | null>(null)
 
   const check = async (): Promise<void> => {
     setChecking(true)
     try {
-      const [a, c] = await Promise.all([window.api.app.checkAppUpdate(), window.api.app.checkCoreUpdates()])
+      const a = await window.api.app.checkAppUpdate()
       setAppInfo(a)
-      setCores(c)
       if (!a.error && !a.updateAvailable) toast.success(`已是最新版本 ${a.current}`)
     } finally {
       setChecking(false)
@@ -1318,6 +1315,8 @@ function UpdateSection(): JSX.Element {
 
   useEffect(() => {
     const off = window.api.app.onUpdateProgress((p) => {
+      // core downloads are reported on the proxy page now
+      if (p.kind !== 'app') return
       if (p.state === 'downloading') setPercent(p.percent)
       else setPercent(null)
       if (p.state === 'error' && p.message) toast.error(p.message)
@@ -1344,21 +1343,6 @@ function UpdateSection(): JSX.Element {
     if (!res.ok) toast.error(res.error ?? '安装失败')
   }
 
-  const updateCoreNow = async (engine: string): Promise<void> => {
-    setBusyCore(engine)
-    try {
-      const res = await window.api.app.updateCore(engine)
-      if (res.ok) {
-        toast.success('内核已更新，重新启动代理后生效')
-        await check()
-      } else {
-        toast.error(res.error ?? '更新失败')
-      }
-    } finally {
-      setBusyCore(null)
-    }
-  }
-
   const appState = appInfo?.error
     ? appInfo.error
     : appInfo?.updateAvailable
@@ -1370,7 +1354,7 @@ function UpdateSection(): JSX.Element {
   return (
     <>
       <h2 className="set-section-title" style={{ marginTop: 24 }}>
-        <Icon name="update" size={20} /> 版本更新
+        <Icon name="update" size={20} /> 软件更新
       </h2>
       <div className="set-card">
         <SettingRow
@@ -1401,38 +1385,7 @@ function UpdateSection(): JSX.Element {
             ) : null}
           </div>
         </SettingRow>
-
-        {(cores ?? []).map((c) => (
-          <SettingRow
-            key={c.engine}
-            title={`${c.label} 内核`}
-            desc={
-              c.error
-                ? c.error
-                : c.missing
-                  ? '未安装 · 可在此下载'
-                  : c.updateAvailable
-                    ? `有可用更新：${c.local} → ${c.latest}`
-                    : `已是最新版本（${c.local}）`
-            }
-          >
-            {c.updateAvailable || c.missing ? (
-              <Button
-                variant="tonal"
-                size="sm"
-                icon={c.missing ? 'download' : 'update'}
-                loading={busyCore === c.engine}
-                onClick={() => void updateCoreNow(c.engine)}
-              >
-                {c.missing ? '下载' : '更新'}
-              </Button>
-            ) : (
-              <span className="tiny muted">{c.local ?? '—'}</span>
-            )}
-          </SettingRow>
-        ))}
-
-        <SettingRow title="更新渠道" desc="可在「通用」中切换 GitHub 官方或国内镜像站">
+        <SettingRow title="内核更新" desc="Xray / sing-box / Mihomo 的版本与一键更新已移至「代理」页面">
           <Button variant="text" size="sm" icon="open" onClick={() => void window.api.app.openReleases()}>
             打开发布页
           </Button>
