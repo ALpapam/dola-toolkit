@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { APP_VERSION_LABEL } from '@shared/version'
 import { useApp } from './state/app'
 import { Icon } from './ui/Icon'
 import { HomePage } from './pages/Home'
@@ -162,7 +163,19 @@ function useUpdateNudge(): ReactNode {
         try {
           const pending = await window.api.app.takePendingUpdate()
           if (!cancelled && pending) {
-            toast.success('已更新到最新版本')
+            /*
+             * Report what actually happened, not what was requested.
+             *
+             * The marker records the version that launched the installer, so this
+             * session knows whether the new version really loaded. Claiming success
+             * unconditionally hid a broken (truncated) installer completely: the app
+             * restarted, said "updated", and was still running the old build.
+             */
+            if (pending.updated) {
+              toast.success(`已更新到 ${APP_VERSION_LABEL}`)
+            } else {
+              toast.warn(`更新未生效，当前仍是 ${APP_VERSION_LABEL}。请在「设置 → 关于」重新下载`)
+            }
           }
           const [app, cores] = await Promise.all([
             window.api.app.checkAppUpdate(),

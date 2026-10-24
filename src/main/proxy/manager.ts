@@ -1183,7 +1183,42 @@ export class ProxyManager {
     return last ? `节点不可用：${last.replace(/^.*?(ERROR|FATAL)\s*/i, '').slice(0, 160)}` : '无法通过该节点访问网络'
   }
 
-  private measureDelay(port: number): Promise<number | null> {
+  /**
+   * Measures latency through the local proxy.
+   *
+   * Several endpoints are tried in order, because a single hard-coded one is not a
+   * measurement of the NODE: `www.gstatic.com` is reset outright on some routes
+   * (observed: ECONNRESET on every attempt through a Hysteria2 node that served
+   * youtube fine), so the old implementation reported "测速失败" for a perfectly
+   * healthy node. Endpoints that answer give a real number; only when none do is the
+   * node actually unusable.
+   *
+   * The 204 endpoints are used with plain HTTP on purpose: no TLS handshake, so the
+   * number reflects the tunnel rather than a session-cache warm-up.
+   */
+  private async measureDelay(port: number): Promise<number | null> {
+    const endpoints = [
+      { host: 'www.google.com', path: 'http://www.google.com/generate_204' },
+      { host: 'cp.cloudflare.com', path: 'http://cp.cloudflare.com/generate_204' },
+      { host: 'www.gstatic.com', path: 'http://www.gstatic.com/generate_204' },
+      { host: 'www.bing.com', path: 'http://www.bing.com/generate_204' }
+    ]
+    const results: number[] = []
+    for (const ep of endpoints) {
+      const ms = await this.timeOnce(port, ep.host, ep.path)
+      if (ms !== null) {
+        results.push(ms)
+        // two independent answers are enough to trust the number and stay fast
+        if (results.length >= 2) break
+      }
+    }
+    if (results.length === 0) return null
+    // lowest of the samples: the median is skewed by the first, cold connection
+    return Math.min(...results)
+  }
+
+  /** One timed request through the proxy; null when it did not get through. */
+  private timeOnce(port: number, host: string, path: string): Promise<number | null> {
     return new Promise((resolve) => {
       const started = now()
       let settled = false
@@ -1197,14 +1232,14 @@ export class ProxyManager {
           host: '127.0.0.1',
           port,
           method: 'GET',
-          path: 'http://www.gstatic.com/generate_204',
-          headers: { Host: 'www.gstatic.com', 'User-Agent': 'Dola Toolkit/1.0' },
+          path,
+          headers: { Host: host, 'User-Agent': 'Dola Toolkit/1.0', Connection: 'close' },
           timeout: TEST_TIMEOUT
         })
         req.on('response', (res) => {
           res.resume()
           res.on('end', () => done(Math.max(1, now() - started)))
-          res.on('error', () => done(Math.max(1, now() - started)))
+          res.on('error', () => done(null))
         })
         req.on('timeout', () => {
           req.destroy()

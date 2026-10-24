@@ -49,7 +49,7 @@ export function CoreUpdateDialog({ open, onClose, onFinished }: Props): JSX.Elem
     try {
       const res = await window.api.app.updateCore(engine)
       if (!res.ok) toast.error(res.error ?? '更新失败')
-      else toast.success('内核已更新，重新启动代理后生效')
+      else toast.success('内核已更新，正在重启应用…')
       await check()
       onFinished()
     } finally {
@@ -62,7 +62,7 @@ export function CoreUpdateDialog({ open, onClose, onFinished }: Props): JSX.Elem
     try {
       const res = await window.api.app.updateAllCores()
       if (res.updated.length > 0) {
-        toast.success(`已更新 ${res.updated.join(' / ')}，重新启动代理后生效`)
+        toast.success(`已更新 ${res.updated.join(' / ')}，正在重启应用…`)
       }
       if (res.failed.length > 0) {
         toast.error(res.failed.map((f) => `${f.engine}: ${f.error}`).join('；'))

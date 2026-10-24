@@ -108,10 +108,10 @@ export function registerUpdatesIpc(): void {
     }
   })
 
-  ipcMain.handle(IPC.updateInstallApp, async (_e, installerPath: unknown) => {
+  ipcMain.handle(IPC.updateInstallApp, async (_e, installerPath: unknown, targetVersion?: unknown) => {
     if (typeof installerPath !== 'string' || !installerPath) return { ok: false, error: '缺少安装包路径' }
     try {
-      await installAppUpdate(installerPath)
+      await installAppUpdate(installerPath, typeof targetVersion === 'string' ? targetVersion : undefined)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : '安装失败' }
@@ -156,15 +156,25 @@ export function registerUpdatesIpc(): void {
   ipcMain.handle(IPC.updateAllCores, async () => {
     const updated: string[] = []
     const failed: { engine: string; error: string }[] = []
+    let proxyWasUp = false
     try {
       const list = await checkCoreUpdates()
       const behind = list.filter((c) => c.updateAvailable && c.assetUrl)
-      // stop only when the running core is among those being replaced
+
+      /*
+       * Only the core that is ACTUALLY serving traffic needs to be stopped, and only
+       * if it is one of the ones being replaced. A core that is not running has no
+       * locked executable, so touching it would tear down a working proxy for no
+       * reason — which is exactly what "一键更新" used to do whenever the running
+       * engine happened to be in the outdated set.
+       */
       const running = proxyManager.state().engines.find((e) => e.running)?.engine
-      const stoppedRunning = Boolean(running && behind.some((c) => c.engine === running))
-      if (stoppedRunning) {
+      proxyWasUp = Boolean(running)
+      const mustStop = Boolean(running && behind.some((c) => c.engine === running))
+      if (mustStop) {
         await proxyManager.stop()
       }
+
       for (const item of behind) {
         try {
           let last = -1
@@ -182,12 +192,22 @@ export function registerUpdatesIpc(): void {
           failed.push({ engine: item.label, error: message })
         }
       }
+
       if (updated.length > 0) {
-        markResumeProxyAfterRestart(stoppedRunning)
+        /*
+         * Restart only when something was actually replaced.
+         *
+         * The resume flag records whether the proxy was up BEFORE the update — not
+         * whether this call stopped it. Using the narrower value meant a batch that
+         * did not need to stop anything restarted without bringing the proxy back.
+         */
+        markResumeProxyAfterRestart(proxyWasUp)
         scheduleRelaunch()
       }
     } catch (e) {
       failed.push({ engine: '检查', error: e instanceof Error ? e.message : '更新失败' })
+      // never leave the user offline after a partial run
+      if (proxyWasUp) markResumeProxyAfterRestart(true)
     }
     return { updated, failed }
   })

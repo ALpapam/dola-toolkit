@@ -49,10 +49,10 @@ export interface DolaToolkitApi {
     checkAppUpdate(): Promise<import('@shared/types').AppUpdateInfo>
     checkCoreUpdates(): Promise<import('@shared/types').CoreUpdateInfo[]>
     downloadAppUpdate(): Promise<{ ok: boolean; path?: string; error?: string }>
-    installAppUpdate(installerPath: string): Promise<{ ok: boolean; error?: string }>
+    installAppUpdate(installerPath: string, targetVersion?: string): Promise<{ ok: boolean; error?: string }>
     updateCore(engine: string): Promise<{ ok: boolean; path?: string; error?: string }>
     updateAllCores(): Promise<{ updated: string[]; failed: { engine: string; error: string }[] }>
-    takePendingUpdate(): Promise<{ from: string } | null>
+    takePendingUpdate(): Promise<{ from: string; to: string; updated: boolean } | null>
     openReleases(): Promise<boolean>
     onUpdateProgress(cb: (p: import('@shared/types').UpdateProgress) => void): () => void
   }

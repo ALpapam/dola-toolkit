@@ -12,7 +12,20 @@
 // ---------------------------------------------------------------------------
 
 import { app, shell } from 'electron'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -89,7 +102,15 @@ async function fetchJson<T>(url: string): Promise<T> {
   return JSON.parse(await fetchText(url)) as T
 }
 
-/** Downloads to a file, reporting progress as a fraction of Content-Length. */
+/**
+ * Downloads to a file and refuses to report success on a short read.
+ *
+ * The length check is the important part: this is what silently broke in-app
+ * updates. A truncated transfer (proxy drop, idle-timeout race, server closing the
+ * connection early) left a partial .exe on disk, the download was reported as
+ * successful, and running that half file did nothing at all — the app restarted and
+ * stayed on the old version with no error anywhere.
+ */
 function downloadTo(
   url: string,
   target: string,
@@ -115,7 +136,16 @@ function downloadTo(
         }
         const total = Number(res.headers['content-length'] ?? 0)
         let got = 0
+        let settled = false
         const out = createWriteStream(target)
+        const fail = (err: Error): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(idle)
+          out.destroy()
+          rmSync(target, { force: true })
+          reject(err)
+        }
         /*
          * A stalled connection must not hang the update forever. GitHub release
          * downloads can sit at 0 bytes for minutes on a bad route, so the transfer
@@ -123,11 +153,7 @@ function downloadTo(
          * the mirror or report a clear error.
          */
         let idle = setTimeout(() => {
-          try {
-            req.destroy(new Error('下载停滞，请尝试切换为国内镜像站'))
-          } catch {
-            /* ignore */
-          }
+          req.destroy(new Error('下载停滞，请尝试切换为国内镜像站'))
         }, 60_000)
         res.on('data', (c: Buffer) => {
           clearTimeout(idle)
@@ -135,14 +161,26 @@ function downloadTo(
           got += c.length
           onProgress(got, total)
         })
-        res.on('end', () => clearTimeout(idle))
-        res.on('error', () => clearTimeout(idle))
+        res.on('error', (e) => fail(e))
         res.pipe(out)
-        out.on('finish', () => out.close(() => resolve()))
-        out.on('error', reject)
-        res.on('error', reject)
+        out.on('error', (e) => fail(e))
+        out.on('finish', () => {
+          clearTimeout(idle)
+          out.close(() => {
+            if (settled) return
+            // a short body means the file is unusable; say so instead of pretending
+            if (total > 0 && got < total) {
+              settled = true
+              rmSync(target, { force: true })
+              reject(new Error(`下载不完整（${Math.round((got / total) * 100)}%），请重试或切换下载渠道`))
+              return
+            }
+            settled = true
+            resolve()
+          })
+        })
       }, { proxyPort })
-      req.on('error', reject)
+      req.on('error', (e) => reject(e))
       req.end()
     }
     go(url, 0)
@@ -337,7 +375,7 @@ export async function checkAppUpdate(): Promise<AppUpdateInfo> {
 
 let downloadCancel: { url: string } | null = null
 
-/** Downloads the installer next to the temp dir and returns its path. */
+/** Downloads the installer and verifies it before returning its path. */
 export async function downloadAppUpdate(onProgress: (percent: number) => void): Promise<string> {
   const info = await checkAppUpdate()
   if (!info.downloadUrl) throw new Error(info.error ?? '没有可用的下载地址')
@@ -360,22 +398,52 @@ export async function downloadAppUpdate(onProgress: (percent: number) => void): 
 /**
  * Runs the downloaded installer elevated and quits.
  *
- * `Start-Process -Verb RunAs` triggers the UAC prompt; the installer itself also
- * requests elevation, so users see a single confirmation. The app must release its
- * files first, hence the quit.
+ * The installer's own manifest requests administrator rights, so handing it to the
+ * shell raises the UAC prompt — no PowerShell wrapper is needed (spawning
+ * `powershell.exe` by bare name failed with ENOENT here, because the main process can
+ * run with a PATH that has no System32).
+ *
+ * The file is validated first. A truncated download used to be treated as success:
+ * running the partial .exe did nothing, the app restarted on the old version, and
+ * nothing anywhere said why. Anything that is not plausibly a full installer is
+ * rejected here with an actionable message.
  */
-export async function installAppUpdate(installerPath: string): Promise<void> {
+export async function installAppUpdate(installerPath: string, targetVersion?: string): Promise<void> {
   if (!existsSync(installerPath)) throw new Error('安装包不存在，请重新下载')
 
-  /*
-   * Launching the installer through the shell is enough: its own manifest requests
-   * administrator rights, so Windows raises the UAC prompt. The previous version
-   * wrapped this in `spawn('powershell.exe', … )`, which fails with
-   * "spawn powershell.exe ENOENT" — the Electron main process can run with a PATH
-   * that has no System32 (the same trap that broke reg.exe and the tray earlier).
-   */
+  const stat = statSync(installerPath)
+  // every build so far is ~125 MB; anything far below that is a broken transfer
+  const MIN_PLAUSIBLE = 60 * 1024 * 1024
+  if (stat.size < MIN_PLAUSIBLE) {
+    rmSync(installerPath, { force: true })
+    throw new Error(
+      `安装包不完整（${Math.round(stat.size / 1048576)} MB，正常约 127 MB），已删除。请重新下载更新`
+    )
+  }
+  // an MZ header is the minimum proof that this is an executable at all
+  const head = Buffer.alloc(2)
+  const fd = openSync(installerPath, 'r')
   try {
-    writeFileSync(join(app.getPath('userData'), 'update-pending.json'), JSON.stringify({ at: Date.now(), path: installerPath }))
+    readSync(fd, head, 0, 2, 0)
+  } finally {
+    closeSync(fd)
+  }
+  if (head[0] !== 0x4d || head[1] !== 0x5a) {
+    rmSync(installerPath, { force: true })
+    throw new Error('下载的文件不是有效的安装程序，已删除。请重新下载更新')
+  }
+
+  try {
+    writeFileSync(
+      join(app.getPath('userData'), 'update-pending.json'),
+      JSON.stringify({
+        at: Date.now(),
+        path: installerPath,
+        // remembered so the next launch can verify the update actually landed
+        from: APP_VERSION,
+        to: targetVersion ?? APP_VERSION
+      })
+    )
   } catch {
     /* non-fatal: only used to confirm the update on the next start */
   }
@@ -541,14 +609,26 @@ function findFile(dir: string, name: string): string | null {
 // ---------------------------------------------------------------------------
 
 /** Returns the version we were updating TO when the previous session installed an update. */
-export function takePendingUpdate(): { from: string } | null {
+/**
+ * Reports what the pending marker says about the last update attempt.
+ *
+ * It records the version we were running when the installer was launched, so the
+ * next session can compare against the version actually loaded now. Returning that
+ * pair is what lets the UI tell「已更新到最新版本」apart from「安装没成功，仍是旧版本」
+ * — the previous version unconditionally claimed success, which is how a broken
+ * installer download went unnoticed.
+ */
+export function takePendingUpdate(): { from: string; to: string; updated: boolean } | null {
   const file = join(app.getPath('userData'), 'update-pending.json')
   if (!existsSync(file)) return null
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as { at?: number }
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { at?: number; from?: string; to?: string }
     rmSync(file, { force: true })
-    return { from: APP_VERSION }
+    const from = typeof raw.from === 'string' ? raw.from : '0.0.0'
+    const to = typeof raw.to === 'string' ? raw.to : from
+    return { from, to, updated: compareVersions(APP_VERSION, from) > 0 }
   } catch {
+    rmSync(file, { force: true })
     return null
   }
 }

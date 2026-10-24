@@ -1339,7 +1339,8 @@ function UpdateSection(): JSX.Element {
   const install = async (): Promise<void> => {
     if (!installerPath) return
     toast.info('即将退出并启动安装程序，请按提示完成安装')
-    const res = await window.api.app.installAppUpdate(installerPath)
+    // the target version is remembered so the next launch can verify the result
+    const res = await window.api.app.installAppUpdate(installerPath, appInfo?.latest ?? undefined)
     if (!res.ok) toast.error(res.error ?? '安装失败')
   }
 

@@ -32,7 +32,8 @@ const api = {
     checkAppUpdate: () => ipcRenderer.invoke(IPC.updateCheckApp),
     checkCoreUpdates: () => ipcRenderer.invoke(IPC.updateCheckCores),
     downloadAppUpdate: () => ipcRenderer.invoke(IPC.updateDownloadApp),
-    installAppUpdate: (installerPath: string) => ipcRenderer.invoke(IPC.updateInstallApp, installerPath),
+    installAppUpdate: (installerPath: string, targetVersion?: string) =>
+      ipcRenderer.invoke(IPC.updateInstallApp, installerPath, targetVersion),
     updateCore: (engine: string) => ipcRenderer.invoke(IPC.updateCore, engine),
     updateAllCores: () => ipcRenderer.invoke(IPC.updateAllCores),
     takePendingUpdate: () => ipcRenderer.invoke(IPC.updateTakePending),
