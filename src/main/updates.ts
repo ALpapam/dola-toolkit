@@ -117,11 +117,17 @@ function downloadTo(
   onProgress: (got: number, total: number) => void,
   timeoutMs = 600_000
 ): Promise<void> {
-  // resolved once per download: the proxy may stop mid-transfer, but a stable
-  // route for the whole file avoids re-negotiating CONNECT on every redirect
-  const proxyPort = activeProxyPort()
   return new Promise((resolve, reject) => {
     const go = (current: string, redirects: number): void => {
+      /*
+       * Resolved per request, not once per download.
+       *
+       * A single resolution at the top meant a transfer that began while no core was
+       * up kept using the direct route even after the proxy came back — the slow
+       * path this whole mechanism exists to avoid. Reading it at each hop also
+       * survives a redirect to a different host.
+       */
+      const proxyPort = activeProxyPort()
       if (redirects > 6) return reject(new Error('重定向过多'))
       const req = httpsGet(current, timeoutMs, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -526,7 +532,21 @@ async function currentCoreVersion(engine: CoreId): Promise<string | null> {
 }
 
 /** Downloads a core release archive, extracts the exe and replaces the local one. */
-export async function updateCore(engine: CoreId, onProgress: (percent: number) => void): Promise<string> {
+/**
+ * Downloads a core release and swaps the binary in.
+ *
+ * Order matters and used to be wrong: the caller stopped the running proxy BEFORE
+ * calling this, so the download went out over the direct route — slow, and with the
+ * proxy button greyed out the whole time even though the tunnel was healthy. The
+ * archive is fetched first (through the proxy when it is up), and only the swap
+ * needs the exe released, so `prepare` is called right before the replace.
+ */
+export async function updateCore(
+  engine: CoreId,
+  onProgress: (percent: number) => void,
+  /** stops the core that owns the target exe; called after the download */
+  prepare: () => Promise<void> = async () => undefined
+): Promise<string> {
   const meta = REPOS[engine]
   const info = (await checkCoreUpdates()).find((c) => c.engine === engine)
   if (!info) throw new Error('未找到内核信息')
@@ -548,7 +568,7 @@ export async function updateCore(engine: CoreId, onProgress: (percent: number) =
    * run with a PATH that has no System32 — the same trap as reg.exe and the
    * installer launch.
    */
-  const tarExe = join(process.env['SystemRoot'] || 'C:\\Windows', 'System32', 'tar.exe')
+  const tarExe = join(process.env['SystemRoot'] || 'C:\Windows', 'System32', 'tar.exe')
   await new Promise<void>((resolve, reject) => {
     const child = spawn(tarExe, ['-xf', archive, '-C', dir], { windowsHide: true, stdio: 'ignore' })
     child.on('error', reject)
@@ -567,7 +587,8 @@ export async function updateCore(engine: CoreId, onProgress: (percent: number) =
   const targetDir = join(targetRoot, engine === 'singbox' ? 'singbox' : engine)
   mkdirSync(targetDir, { recursive: true })
   const target = join(targetDir, meta.exe)
-  // a running core locks its exe; callers stop the core before this point
+  // a running core locks its exe; release it only now that the download is done
+  await prepare()
   if (existsSync(target)) renameSync(target, `${target}.bak`)
   renameSync(exe, target)
   // the version probe caches its result, so the UI would otherwise keep showing

@@ -122,28 +122,34 @@ export function registerUpdatesIpc(): void {
     const id = engine as CoreId
     if (!['xray', 'singbox', 'mihomo'].includes(id)) return { ok: false, error: '未知内核' }
     try {
-      // only THIS core's exe is locked; stopping every core tore down a running
-      // proxy that had nothing to do with the update
-      const wasRunning = await stopCoreIfRunning(id)
-      let last = -1
-      const path = await updateCore(id, (percent) => {
-        if (percent !== last) {
-          last = percent
-          emit({ kind: 'core', engine: id, percent, state: 'downloading' })
-        }
-      })
-      emit({ kind: 'core', engine: id, percent: 100, state: 'done' })
       /*
-       * Restart so the new binary is used from a clean process.
+       * Download FIRST, stop the core only to swap the binary.
        *
-       * The flag must record whether ANY core is still running after the update, not
-       * just whether this one had to be stopped: updating Xray while sing-box serves
-       * traffic stops nothing, yet the proxy still needs to come back after the
-       * restart. Reading the state after the update is also the only way to know the
-       * sing-box case correctly.
+       * Stopping up front meant the whole transfer went out over the direct route:
+       * slow, and the proxy button sat greyed out while the tunnel was perfectly
+       * healthy. The proxy now stays up for the download (which then tunnels through
+       * it) and is released for the few milliseconds the file swap needs.
        */
-      const anyRunning = proxyManager.state().engines.some((e) => e.running) || wasRunning
-      markResumeProxyAfterRestart(anyRunning)
+      const proxyWasUp = proxyManager.state().engines.some((e) => e.running)
+      let stopped = false
+      let last = -1
+      const path = await updateCore(
+        id,
+        (percent) => {
+          if (percent !== last) {
+            last = percent
+            emit({ kind: 'core', engine: id, percent, state: 'downloading' })
+          }
+        },
+        async () => {
+          // only the core that owns this exe has to let go of it
+          stopped = (await stopCoreIfRunning(id)) || stopped
+        }
+      )
+      emit({ kind: 'core', engine: id, percent: 100, state: 'done' })
+      // a restart applies the new binary; bring the proxy back if it was up before
+      markResumeProxyAfterRestart(proxyWasUp)
+      void stopped
       scheduleRelaunch()
       return { ok: true, path }
     } catch (e) {
@@ -162,28 +168,32 @@ export function registerUpdatesIpc(): void {
       const behind = list.filter((c) => c.updateAvailable && c.assetUrl)
 
       /*
-       * Only the core that is ACTUALLY serving traffic needs to be stopped, and only
-       * if it is one of the ones being replaced. A core that is not running has no
-       * locked executable, so touching it would tear down a working proxy for no
-       * reason — which is exactly what "一键更新" used to do whenever the running
-       * engine happened to be in the outdated set.
+       * Download everything first, stop the proxy only when a swap needs the exe.
+       *
+       * Stopping before the downloads made the whole batch go out over the direct
+       * route — the slow update and the greyed-out proxy button the user saw. Each
+       * `prepare` callback runs just before that engine's binary is replaced, and
+       * only if that engine is the one currently running.
        */
       const running = proxyManager.state().engines.find((e) => e.running)?.engine
       proxyWasUp = Boolean(running)
-      const mustStop = Boolean(running && behind.some((c) => c.engine === running))
-      if (mustStop) {
-        await proxyManager.stop()
-      }
 
       for (const item of behind) {
         try {
           let last = -1
-          await updateCore(item.engine, (percent) => {
-            if (percent !== last) {
-              last = percent
-              emit({ kind: 'core', engine: item.engine, percent, state: 'downloading' })
+          await updateCore(
+            item.engine,
+            (percent) => {
+              if (percent !== last) {
+                last = percent
+                emit({ kind: 'core', engine: item.engine, percent, state: 'downloading' })
+              }
+            },
+            async () => {
+              // nothing to stop unless the engine we are replacing is the live one
+              if (running === item.engine) await proxyManager.stop()
             }
-          })
+          )
           emit({ kind: 'core', engine: item.engine, percent: 100, state: 'done' })
           updated.push(item.label)
         } catch (e) {
