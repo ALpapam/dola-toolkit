@@ -103,8 +103,15 @@ export function coreRoots(): string[] {
     } catch {
       /* app.getPath('exe') can fail in odd packaging modes */
     }
-    // Last resort for this machine: the shared tool folder the user already
-    // keeps the cores in.
+    /*
+     * Last resort for this machine: the shared tool folder.
+     *
+     * Both spellings are needed. Cores live in `<tool>/cores/<engine>/`, but
+     * FALLBACK_TOOL_DIR points at the PARENT, so listing only that made the nested
+     * folder unreachable — the app silently fell back to stale copies dropped
+     * directly in `<tool>/`.
+     */
+    roots.push(join(FALLBACK_TOOL_DIR, 'cores'))
     roots.push(FALLBACK_TOOL_DIR)
   } else {
     const appPath = safeAppPath()
@@ -116,6 +123,7 @@ export function coreRoots(): string[] {
     }
     roots.push(join(process.cwd(), 'cores'))
     // The Lead stages binaries here before they are copied into the project.
+    roots.push(join(FALLBACK_TOOL_DIR, 'cores'))
     roots.push(FALLBACK_TOOL_DIR)
   }
   return [...new Set(roots.map((r) => normalize(r)))]
@@ -166,10 +174,22 @@ export function coresDirFor(engine: CoreId): string {
 export function findCore(engine: CoreId): string | null {
   const roots = coreRoots()
   const sub = SUBDIRS[engine]
+  /*
+   * Nested layout first, across every root, before any flat file.
+   *
+   * Checking `root/xray.exe` while iterating meant a stray binary dropped at the
+   * tool root (an earlier buggy update did exactly that) shadowed the proper
+   * `cores/xray/xray.exe` — so the app kept launching the leftover and a core update
+   * replaced a file nothing was using.
+   */
   for (const root of roots) {
     for (const name of EXE_NAMES[engine]) {
       const nested = join(root, sub, name)
       if (isFile(nested)) return nested
+    }
+  }
+  for (const root of roots) {
+    for (const name of EXE_NAMES[engine]) {
       const flat = join(root, name)
       if (isFile(flat)) return flat
     }

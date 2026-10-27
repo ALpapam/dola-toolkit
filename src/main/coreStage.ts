@@ -17,11 +17,11 @@
 
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { CoreId } from '@shared/types'
-import { coreRoots, invalidateCoreVersion } from './proxy/binary'
+import { coresDirFor, findCore, invalidateCoreVersion } from './proxy/binary'
 
 export interface StagedCore {
   engine: CoreId
@@ -127,6 +127,41 @@ function findFileMatch(dir: string, pattern: RegExp): string | null {
   return null
 }
 
+/**
+ * Where this engine's binary actually lives.
+ *
+ * `coreRoots()[0]` is NOT the right answer: in a packaged build it is
+ * `<resources>/cores`, which usually does not exist, while the real cores sit in a
+ * `cores` folder next to the executable. Writing there created a second tree that
+ * `findCore` then preferred, so the "update" never replaced the binary that was
+ * actually being launched. The existing binary's own location wins when there is one,
+ * and `coresDirFor` (which probes the same list findCore uses) decides otherwise.
+ */
+/**
+ * Moves a file, falling back to copy+delete across volumes.
+ *
+ * The staging folder lives in userData (usually on C:) while the cores can sit on
+ * another drive — `renameSync` throws EXDEV there, and that failure used to abort the
+ * apply silently, leaving the old core in place after a "successful" update.
+ */
+function moveFile(from: string, to: string): void {
+  try {
+    renameSync(from, to)
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'EACCES') throw e
+    copyFileSync(from, to)
+    unlinkSync(from)
+  }
+}
+
+function resolveTargetPath(engine: CoreId): string {
+  // replace exactly the binary that is being launched
+  const existing = findCore(engine)
+  if (existing) return existing
+  return join(coresDirFor(engine), engineFolder(engine), targetExeName(engine))
+}
+
 /** True when the file starts with an MZ header, i.e. it is a Windows executable. */
 async function hasMzHeader(path: string): Promise<boolean> {
   const { open } = await import('node:fs/promises')
@@ -222,7 +257,7 @@ export async function stageCore(options: StageOptions): Promise<StagedCore> {
       label: LABELS[engine],
       version,
       stagedPath,
-      targetPath: join(coreRoots()[0], engineFolder(engine), targetExeName(engine)),
+      targetPath: resolveTargetPath(engine),
       size: statSync(stagedPath).size,
       sha256: exeSha,
       at: Date.now()
@@ -254,6 +289,8 @@ export async function applyStagedCores(): Promise<{
   const applied: string[] = []
   const failed: { engine: string; error: string }[] = []
   if (list.length === 0) return { applied, failed }
+  /** entries that could not be applied but are still worth retrying */
+  const keep: StagedCore[] = []
 
   for (const item of list) {
     try {
@@ -262,18 +299,31 @@ export async function applyStagedCores(): Promise<{
       if (actual.toLowerCase() !== item.sha256.toLowerCase()) throw new Error('暂存文件校验失败')
       if (!(await hasMzHeader(item.stagedPath))) throw new Error('暂存文件不是有效的可执行文件')
 
-      const target = item.targetPath
+      /*
+       * Re-resolve the destination here rather than trusting the path recorded at
+       * stage time. The install layout can differ between sessions (portable vs
+       * installed, a moved folder), and a stale path silently "succeeded" while
+       * writing somewhere findCore never looks — the version then never changed.
+       */
+      const target = resolveTargetPath(item.engine)
       mkdirSync(join(target, '..'), { recursive: true })
       rmSync(`${target}.bak`, { force: true })
-      if (existsSync(target)) renameSync(target, `${target}.bak`)
-      renameSync(item.stagedPath, target)
+      // back-up through the same cross-volume helper: a plain rename can be refused
+      // with EPERM here (observed), which aborted the apply
+      if (existsSync(target)) moveFile(target, `${target}.bak`)
+      moveFile(item.stagedPath, target)
       invalidateCoreVersion(item.engine)
       applied.push(`${item.label} ${item.version}`)
       rmSync(join(item.stagedPath, '..'), { recursive: true, force: true })
     } catch (e) {
-      failed.push({ engine: item.label, error: e instanceof Error ? e.message : '替换失败' })
+      const message = e instanceof Error ? e.message : '替换失败'
+      failed.push({ engine: item.label, error: message })
+      // a binary that failed its own checksum cannot be retried; a locked/failed
+      // swap can, so keep the entry and let the next launch try again
+      if (existsSync(item.stagedPath) && !/校验失败|不是有效/.test(message)) keep.push(item)
     }
   }
-  writeStagedCores([])
+
+  writeStagedCores(keep)
   return { applied, failed }
 }
