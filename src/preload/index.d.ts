@@ -50,8 +50,24 @@ export interface DolaToolkitApi {
     checkCoreUpdates(): Promise<import('@shared/types').CoreUpdateInfo[]>
     downloadAppUpdate(): Promise<{ ok: boolean; path?: string; error?: string }>
     installAppUpdate(installerPath: string, targetVersion?: string): Promise<{ ok: boolean; error?: string }>
-    updateCore(engine: string): Promise<{ ok: boolean; path?: string; error?: string }>
-    updateAllCores(): Promise<{ updated: string[]; failed: { engine: string; error: string }[] }>
+    stageCore(engine: string): Promise<{
+      ok: boolean
+      staged?: import('@shared/types').StagedCoreInfo
+      needsRestart?: boolean
+      error?: string
+    }>
+    stageAllCores(): Promise<{
+      ok: boolean
+      staged: import('@shared/types').StagedCoreInfo[]
+      failed: { engine: string; error: string }[]
+      needsRestart: boolean
+    }>
+    stagedCores(): Promise<import('@shared/types').StagedCoreInfo[]>
+    clearStagedCores(): Promise<{ ok: boolean }>
+    applyStagedNow(): Promise<{ ok: boolean; count?: number; error?: string }>
+    hasStaged(): Promise<boolean>
+    openUpdateLog(): Promise<string>
+    updateLogPath(): Promise<string>
     takePendingUpdate(): Promise<{ from: string; to: string; updated: boolean } | null>
     openReleases(): Promise<boolean>
     onUpdateProgress(cb: (p: import('@shared/types').UpdateProgress) => void): () => void

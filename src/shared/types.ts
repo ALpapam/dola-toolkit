@@ -553,7 +553,19 @@ export interface CoreUpdateInfo {
   updateAvailable: boolean
   channel: DownloadChannel
   assetUrl: string | null
+  /** SHA-256 published by the release (hex), used to verify the download */
+  assetSha256: string | null
   error: string | null
+}
+
+/** A verified core binary waiting in the staging folder for the next restart. */
+export interface StagedCoreInfo {
+  engine: CoreId
+  label: string
+  version: string
+  size: number
+  sha256: string
+  targetPath: string
 }
 
 export interface UpdateProgress {

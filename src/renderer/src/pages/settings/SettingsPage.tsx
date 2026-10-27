@@ -1371,9 +1371,9 @@ function UpdateSection(): JSX.Element {
             </Button>
             {appInfo?.updateAvailable ? (
               percent !== null ? (
-                <Button variant="filled" size="sm" icon="download" disabled>
+                <span className="tiny mono" style={{ minWidth: 36, textAlign: 'right' }}>
                   {percent}%
-                </Button>
+                </span>
               ) : installerPath ? (
                 <Button variant="filled" size="sm" icon="check" onClick={() => void install()}>
                   安装并重启
@@ -1384,8 +1384,41 @@ function UpdateSection(): JSX.Element {
                 </Button>
               )
             ) : null}
+            <Button
+              variant="text"
+              size="sm"
+              icon="folderData"
+              onClick={() => void window.api.app.openUpdateLog()}
+            >
+              更新日志
+            </Button>
           </div>
         </SettingRow>
+        {/* a full-width bar: a two-digit percentage alone is not enough feedback for 127 MB */}
+        {percent !== null ? (
+          <div style={{ padding: '0 4px 10px' }}>
+            <div
+              style={{
+                height: 6,
+                borderRadius: 3,
+                background: 'color-mix(in srgb, var(--md-on-surface) 12%, transparent)',
+                overflow: 'hidden'
+              }}
+            >
+              <div
+                style={{
+                  width: `${percent}%`,
+                  height: '100%',
+                  background: 'var(--md-primary)',
+                  transition: 'width 200ms linear'
+                }}
+              />
+            </div>
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              正在下载安装包…{percent}%
+            </div>
+          </div>
+        ) : null}
         <SettingRow title="内核更新" desc="Xray / sing-box / Mihomo 的版本与一键更新已移至「代理」页面">
           <Button variant="text" size="sm" icon="open" onClick={() => void window.api.app.openReleases()}>
             打开发布页

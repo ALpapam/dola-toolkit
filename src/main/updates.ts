@@ -111,6 +111,10 @@ async function fetchJson<T>(url: string): Promise<T> {
  * successful, and running that half file did nothing at all — the app restarted and
  * stayed on the old version with no error anywhere.
  */
+export function stageDownloadTo(url: string, target: string, onProgress: (got: number, total: number) => void): Promise<void> {
+  return downloadTo(url, target, onProgress)
+}
+
 function downloadTo(
   url: string,
   target: string,
@@ -194,6 +198,10 @@ function downloadTo(
 }
 
 /** Wraps a release-asset URL for the mirror channel. */
+export function viaUpdateChannel(url: string, channel: 'github' | 'mirror'): string {
+  return viaChannel(url, channel)
+}
+
 function viaChannel(url: string, channel: DownloadChannel): string {
   return channel === 'mirror' ? `${MIRROR_PREFIX}${url}` : url
 }
@@ -243,7 +251,7 @@ interface GithubRelease {
   body?: string
   published_at?: string
   html_url?: string
-  assets?: { name: string; browser_download_url: string; size: number }[]
+  assets?: { name: string; browser_download_url: string; size: number; digest?: string | null }[]
 }
 
 async function githubRelease(owner: string, repo: string): Promise<GithubRelease | null> {
@@ -478,25 +486,25 @@ export async function checkCoreUpdates(): Promise<CoreUpdateInfo[]> {
     const meta = REPOS[engine]
     const local = await currentCoreVersion(engine)
     let latest: string | null = null
-    let asset: { name: string; url: string } | null = null
+    let asset: { name: string; url: string; digest?: string | null } | null = null
 
-    const rel = channel === 'github' ? await githubRelease(meta.owner, meta.repo) : null
+    /*
+     * Always ask the API for release metadata, even on the mirror channel.
+     *
+     * It is the only place the asset SHA-256 lives, and a checksum is what lets the
+     * update be verified at all. The channel only decides where the DOWNLOAD comes
+     * from; on the mirror the version falls back to jsDelivr if the API is unreachable,
+     * but then there is no digest and the archive is only size-checked.
+     */
+    const rel = await githubRelease(meta.owner, meta.repo)
     if (rel?.tag_name) {
       latest = rel.tag_name.replace(/^v/, '')
       const hit = rel.assets?.find((a) => meta.asset.test(a.name))
-      if (hit) asset = { name: hit.name, url: hit.browser_download_url }
+      if (hit) asset = { name: hit.name, url: hit.browser_download_url, digest: hit.digest ?? null }
     }
     if (!latest) {
       const tag = await jsdelivrTag(meta.owner, meta.repo)
       if (tag) latest = tag.replace(/^v/, '')
-    }
-    if (!latest) {
-      const fallback = await githubRelease(meta.owner, meta.repo)
-      if (fallback?.tag_name) {
-        latest = fallback.tag_name.replace(/^v/, '')
-        const hit = fallback.assets?.find((a) => meta.asset.test(a.name))
-        if (hit) asset = { name: hit.name, url: hit.browser_download_url }
-      }
     }
     // the mirror path never touches the API, so build the asset URL from the
     // known release naming when the API did not provide one
@@ -515,6 +523,8 @@ export async function checkCoreUpdates(): Promise<CoreUpdateInfo[]> {
       updateAvailable: Boolean(latest) && (missing || compareVersions(latest!, local!) > 0),
       channel,
       assetUrl: asset?.url ?? null,
+      // "sha256:abc…" → "abc…"
+      assetSha256: asset?.digest ? asset.digest.replace(/^sha256:/i, '') : null,
       error: latest ? null : '无法获取版本信息'
     })
   }

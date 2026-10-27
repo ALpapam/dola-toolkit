@@ -13,12 +13,17 @@ import { proxyManager } from './proxy/manager'
 import { registerAllIpc } from './ipc'
 import { ensureTray, refreshTrayMenu, destroyTray } from './tray'
 import { takeResumeProxy } from './resume'
+import { applyStagedCores } from './coreStage'
+import { logUpdate } from './updateLog'
 
 // ---------------------------------------------------------------------------
 // Global crash guards — installed before anything else can throw.
 // ---------------------------------------------------------------------------
 
 let logsDir = ''
+/** cores replaced by the staged-update step, reported to the UI on first paint */
+let stagedApplied: string[] = []
+let stagedFailed: { engine: string; error: string }[] = []
 let crashLogReady = false
 
 function writeCrashLog(kind: string, detail: unknown): void {
@@ -169,6 +174,28 @@ let allowWindowDestroy = false
        */
       proxyManager.reload()
       logsDir = getLogsDir()
+
+      /*
+       * Apply staged core binaries before anything can start a core.
+       *
+       * This is the second half of the staged update: the download, checksum and
+       * extraction all happened in the previous session, so this is only a file move
+       * with nothing locked. It must run before `startProxyIfConfigured` below, or the
+       * old binary would be loaded again.
+       */
+      try {
+        const result = await applyStagedCores()
+        if (result.applied.length > 0) {
+          logUpdate('core.apply.ok', result.applied.join(', '))
+          stagedApplied = result.applied
+        }
+        if (result.failed.length > 0) {
+          logUpdate('core.apply.fail', result.failed.map((f) => `${f.engine}: ${f.error}`).join('; '))
+          stagedFailed = result.failed
+        }
+      } catch (e) {
+        logUpdate('core.apply.error', e instanceof Error ? e.message : String(e))
+      }
 
       // only one renderer is trusted: ours, loaded from file:// or the dev server
       app.on('web-contents-created', (_event, contents) => {

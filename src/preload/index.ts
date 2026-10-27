@@ -34,8 +34,14 @@ const api = {
     downloadAppUpdate: () => ipcRenderer.invoke(IPC.updateDownloadApp),
     installAppUpdate: (installerPath: string, targetVersion?: string) =>
       ipcRenderer.invoke(IPC.updateInstallApp, installerPath, targetVersion),
-    updateCore: (engine: string) => ipcRenderer.invoke(IPC.updateCore, engine),
-    updateAllCores: () => ipcRenderer.invoke(IPC.updateAllCores),
+    stageCore: (engine: string) => ipcRenderer.invoke(IPC.updateStageCore, engine),
+    stageAllCores: () => ipcRenderer.invoke(IPC.updateStageAllCores),
+    stagedCores: () => ipcRenderer.invoke(IPC.updateStagedList),
+    clearStagedCores: () => ipcRenderer.invoke(IPC.updateClearStaged),
+    applyStagedNow: () => ipcRenderer.invoke(IPC.updateApplyStagedNow),
+    hasStaged: () => ipcRenderer.invoke(IPC.updateHasStaged),
+    openUpdateLog: () => ipcRenderer.invoke(IPC.updateOpenLog),
+    updateLogPath: () => ipcRenderer.invoke(IPC.updateLogPath),
     takePendingUpdate: () => ipcRenderer.invoke(IPC.updateTakePending),
     openReleases: () => ipcRenderer.invoke(IPC.updateOpenReleases),
     onUpdateProgress: (cb: (p: unknown) => void) => on(IPC.updateProgress, cb)

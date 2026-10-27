@@ -185,6 +185,15 @@ function useUpdateNudge(): ReactNode {
           if (app.updateAvailable && app.latest) {
             toast.info(`发现新版本 ${app.latest}，可在「设置 → 关于」中更新`)
           }
+          /*
+           * Staged core binaries are applied during startup, so by now either the
+           * swap worked or it did not. Say which — this is the last chance for the
+           * user to learn that a core update silently failed.
+           */
+          const stagedNow = await window.api.app.stagedCores()
+          if (stagedNow.length > 0) {
+            toast.warn(`还有 ${stagedNow.length} 个内核等待重启后应用`)
+          }
           const behind = cores.filter((c) => c.updateAvailable)
           if (behind.length > 0) {
             toast.info(`${behind.map((c) => c.label).join(' / ')} 内核可更新`)

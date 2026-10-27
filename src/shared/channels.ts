@@ -18,8 +18,21 @@ export const IPC = {
   updateCheckCores: 'update:check-cores',
   updateDownloadApp: 'update:download-app',
   updateInstallApp: 'update:install-app',
-  updateCore: 'update:core',
-  updateAllCores: 'update:all-cores',
+  /** download + verify a core into the staging folder (no swap yet) */
+  updateStageCore: 'update:stage-core',
+  /** download + verify every outdated core */
+  updateStageAllCores: 'update:stage-all',
+  /** staged binaries awaiting a restart */
+  updateStagedList: 'update:staged-list',
+  /** discard staged binaries */
+  updateClearStaged: 'update:clear-staged',
+  /** apply staged binaries now (restarts the app) */
+  updateApplyStagedNow: 'update:apply-staged-now',
+  /** are there staged binaries waiting for a restart */
+  updateHasStaged: 'update:has-staged',
+  /** reveal the update log */
+  updateOpenLog: 'update:open-log',
+  updateLogPath: 'update:log-path',
   updateTakePending: 'update:take-pending',
   updateProgress: 'update:progress',
   updateOpenReleases: 'update:open-releases',
