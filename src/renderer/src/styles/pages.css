@@ -1845,7 +1845,8 @@
   background: color-mix(in srgb, var(--md-on-surface) 6%, transparent);
   color: var(--md-on-surface-variant);
   cursor: pointer;
-  animation: chevron-bob 2.2s ease-in-out infinite;
+  will-change: transform;
+  animation: chevron-bob 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   transition: background-color 150ms ease;
 }
 
@@ -1854,12 +1855,24 @@
 }
 
 .home-chevron.up {
-  transform: translateX(-50%) rotate(180deg);
+  /* rotation has to live inside the keyframes: the animation owns `transform`, so a
+     static rotate here would be overridden on the first frame */
+  animation-name: chevron-bob-up;
 }
 
+/*
+ * The bob used to animate `margin-bottom`, which relayouts the whole line every frame —
+ * that is why it looked low-framerate. A transform stays on the compositor, so it runs
+ * at display refresh rate.
+ */
 @keyframes chevron-bob {
-  0%, 100% { margin-bottom: 0; }
-  50% { margin-bottom: -5px; }
+  0%, 100% { transform: translateX(-50%) translate3d(0, 0, 0); }
+  50% { transform: translateX(-50%) translate3d(0, 4px, 0); }
+}
+
+@keyframes chevron-bob-up {
+  0%, 100% { transform: translateX(-50%) rotate(180deg) translate3d(0, 0, 0); }
+  50% { transform: translateX(-50%) rotate(180deg) translate3d(0, 4px, 0); }
 }
 
 /* page 2 */
