@@ -136,7 +136,18 @@ export function ModHost({ mod, mode = 'tool' }: Props): JSX.Element {
           <div className="muted tiny">{error}</div>
         </div>
       ) : null}
-      <div ref={containerRef} style={{ height: '100%', minHeight: 0 }} />
+      {/*
+        The mount container must be a flex column with a bounded height.
+        A plain `height: 100%` block left the mod's root `.page` (which uses
+        `flex: 1 1 auto`) with auto height, so its inner scroll containers
+        (e.g. the library's book grid) could grow past the viewport and were clipped by
+        `.mod-page { overflow: hidden }` — that is why imported covers could not be
+        scrolled.
+      */}
+      <div
+        ref={containerRef}
+        style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      />
     </div>
   )
 }

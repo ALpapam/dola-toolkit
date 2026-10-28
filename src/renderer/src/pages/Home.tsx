@@ -245,6 +245,8 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
 
   const [dragId, setDragId] = useState<string | null>(null)
   const [delta, setDelta] = useState({ dx: 0, dy: 0 })
+  /** set after a drag that moved: the click Chromium fires next must not open the tool */
+  const suppressClick = useRef(false)
 
   useEffect(() => {
     orderRef.current = shortcuts.map((s) => s.id)
@@ -271,35 +273,56 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
     }
   })
 
-  const snapshot = (): void => {
+  const snapshot = (skipId: string | null): void => {
     const map = new Map<string, DOMRect>()
-    for (const [id, el] of tileRefs.current) map.set(id, el.getBoundingClientRect())
+    for (const [id, el] of tileRefs.current) {
+      // the dragged tile is following the pointer; its rect would poison the FLIP maths
+      if (id === skipId) continue
+      map.set(id, el.getBoundingClientRect())
+    }
     flipRef.current = map
   }
 
-  /** Index of the tile whose centre is nearest the pointer. */
+  /**
+   * Slot index under the pointer, derived from the GRID's geometry.
+   *
+   * Hit-testing the tiles themselves caused the jitter: the dragged tile carries a
+   * transform that follows the pointer, so its own rect kept moving with the cursor and
+   * repeatedly "won" the nearest-centre test — the order then flip-flopped every frame.
+   * Reading columns/gaps from the container is stable regardless of transforms.
+   */
   const slotAt = (x: number, y: number): number | null => {
-    const ids = orderRef.current
-    let best: number | null = null
-    let bestDist = Number.POSITIVE_INFINITY
-    ids.forEach((id, i) => {
-      const el = tileRefs.current.get(id)
-      if (!el) return
-      const r = el.getBoundingClientRect()
-      // ignore the dragged tile's own shifted box
-      const cx = r.left + r.width / 2
-      const cy = r.top + r.height / 2
-      const d = Math.hypot(x - cx, y - cy)
-      if (d < bestDist) {
-        bestDist = d
-        best = i
-      }
-    })
-    return best
+    const grid = gridRef.current
+    const count = orderRef.current.length
+    if (!grid || count === 0) return null
+    const rect = grid.getBoundingClientRect()
+    const style = getComputedStyle(grid)
+    const columns = style.gridTemplateColumns.split(' ').filter(Boolean)
+    const cols = Math.max(1, columns.length)
+    const gapX = parseFloat(style.columnGap) || 0
+    const gapY = parseFloat(style.rowGap) || 0
+    const cellW = (rect.width - gapX * (cols - 1)) / cols
+
+    // tile height is uniform; take it from any rendered tile
+    const sample = tileRefs.current.get(orderRef.current[0] ?? '')
+    const cellH = (sample?.offsetHeight ?? 88) + gapY
+
+    const localX = x - rect.left
+    const localY = y - rect.top + grid.scrollTop
+    const col = Math.max(0, Math.min(cols - 1, Math.floor(localX / (cellW + gapX))))
+    const row = Math.max(0, Math.floor(localY / cellH))
+    return Math.max(0, Math.min(count - 1, row * cols + col))
   }
 
   const endDrag = (): void => {
+    const drag = dragRef.current
     dragRef.current = null
+    suppressClick.current = Boolean(drag?.moved)
+    if (drag?.moved) {
+      window.setTimeout(() => {
+        suppressClick.current = false
+      }, 350)
+    }
     setDragId(null)
     setDelta({ dx: 0, dy: 0 })
   }
@@ -319,7 +342,7 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
       if (from < 0 || target === from) return
       const next = current.filter((id) => id !== drag.id)
       next.splice(target, 0, drag.id)
-      snapshot()
+      snapshot(drag.id)
       onReorder(next)
     }
     const onUp = (): void => endDrag()
@@ -336,6 +359,7 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
 
   const beginDrag = (id: string) => (e: React.PointerEvent): void => {
     if (e.button !== 0) return
+    suppressClick.current = false
     dragRef.current = { id, startX: e.clientX, startY: e.clientY, moved: false }
     setDelta({ dx: 0, dy: 0 })
     setDragId(id)
@@ -370,7 +394,8 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
               }
               onPointerDown={beginDrag(s.id)}
               onClick={() => {
-                if (dragRef.current?.moved) return
+                // pointerup clears dragRef before this fires, so consult the flag
+                if (suppressClick.current) return
                 onOpen(s.id)
               }}
               aria-label={s.name}

@@ -55,6 +55,15 @@ export function NavRail(): JSX.Element {
   const listRef = useRef<HTMLDivElement | null>(null)
   const itemRefs = useRef(new Map<string, HTMLButtonElement>())
   const session = useRef<DragSession | null>(null)
+  /**
+   * True right after a drag that actually moved the tile.
+   *
+   * `endDrag` clears the session, and the `click` that Chromium synthesises after
+   * pointerup fires *later* — so checking `session.current` there always saw null and
+   * navigated anyway. That is why dragging up (where the pointer often ends back over
+   * the same tile) opened the tool while dragging down did not.
+   */
+  const suppressClick = useRef(false)
 
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragDelta, setDragDelta] = useState(0)
@@ -92,6 +101,13 @@ export function NavRail(): JSX.Element {
     (commit: boolean): void => {
       const drag = session.current
       session.current = null
+      // a moved drag must swallow the click that follows
+      suppressClick.current = Boolean(drag?.moved)
+      if (drag?.moved) {
+        window.setTimeout(() => {
+          suppressClick.current = false
+        }, 350)
+      }
       if (commit && drag) {
         const target = dragIndexRef.current
         if (target !== null) {
@@ -184,7 +200,7 @@ export function NavRail(): JSX.Element {
 
   const openPage = (id: string): void => {
     // a drag that ends on the tile must not also navigate
-    if (session.current?.moved) return
+    if (suppressClick.current) return
     useApp.getState().setPage(id)
   }
 
