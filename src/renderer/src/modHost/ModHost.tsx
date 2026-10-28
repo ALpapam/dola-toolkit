@@ -3,7 +3,8 @@
 //
 // A mod is an IIFE bundle served over `dola-mod://`. Loading is:
 //   <script src="dola-mod://<id>/<entry>">  →  bundle registers window.__DOLA_MODS__[id]
-//   →  host calls mount(container)  →  returns an unmount function
+//   →  host calls mount(container) or mountSettings(container)
+//   →  each returns an unmount function
 //
 // The bundle is cached per id+version, so switching pages does not re-execute it, and
 // an upgraded mod replaces the old registration.
@@ -13,8 +14,17 @@ import { useEffect, useRef, useState } from 'react'
 import type { ModEntry } from '../state/app'
 import { Spinner } from '../ui/controls'
 
-interface ModModule {
-  mount: (container: HTMLElement) => void | (() => void)
+export interface ModModule {
+  /** renders the tool itself */
+  mount?: (container: HTMLElement) => void | (() => void)
+  /** optional secondary settings screen, opened from 设置 → 工具 */
+  mountSettings?: (container: HTMLElement) => void | (() => void)
+}
+
+declare global {
+  interface Window {
+    __DOLA_MODS__?: Record<string, unknown>
+  }
 }
 
 const loaded = new Map<string, Promise<ModModule>>()
@@ -44,7 +54,10 @@ function loadMod(mod: ModEntry): Promise<ModModule> {
     script.async = true
     script.onload = () => {
       const registered = window.__DOLA_MODS__?.[mod.id] as ModModule | undefined
-      if (registered && typeof registered.mount === 'function') resolve(registered)
+      const usable =
+        registered &&
+        (typeof registered.mount === 'function' || typeof registered.mountSettings === 'function')
+      if (usable) resolve(registered)
       else reject(new Error('插件没有正确注册，可能不是有效的 Dola Toolkit 插件'))
     }
     script.onerror = () => reject(new Error('插件文件加载失败'))
@@ -66,10 +79,12 @@ export function invalidateMod(id: string): void {
 
 interface Props {
   mod: ModEntry
+  /** 'tool' renders the tool, 'settings' renders its settings screen */
+  mode?: 'tool' | 'settings'
 }
 
 /** Renders a mod's UI inside the page area. */
-export function ModHost({ mod }: Props): JSX.Element {
+export function ModHost({ mod, mode = 'tool' }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,7 +100,11 @@ export function ModHost({ mod }: Props): JSX.Element {
       try {
         const modModule = await loadMod(mod)
         if (disposed || !containerRef.current) return
-        unmount = modModule.mount(containerRef.current)
+        const fn = mode === 'settings' ? modModule.mountSettings : modModule.mount
+        if (typeof fn !== 'function') {
+          throw new Error(mode === 'settings' ? '该插件没有提供设置界面' : '该插件没有提供界面')
+        }
+        unmount = fn(containerRef.current)
       } catch (e) {
         if (!disposed) setError(e instanceof Error ? e.message : '插件加载失败')
       } finally {
@@ -101,7 +120,7 @@ export function ModHost({ mod }: Props): JSX.Element {
         /* a mod that fails to clean up must not break navigation */
       }
     }
-  }, [mod.id, mod.version])
+  }, [mod.id, mod.version, mode])
 
   return (
     <div className="mod-page" style={{ height: '100%', minHeight: 0, position: 'relative' }}>

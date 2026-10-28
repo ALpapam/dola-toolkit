@@ -13,6 +13,7 @@
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { LibraryPage } from './LibraryPage'
+import { LibrarySettingsPage } from './settings'
 
 export function mount(container: HTMLElement): () => void {
   const root = createRoot(container)
@@ -20,11 +21,24 @@ export function mount(container: HTMLElement): () => void {
   return () => root.unmount()
 }
 
-export interface LibraryMod {
-  mount(container: HTMLElement): () => void
+/**
+ * Secondary settings screen.
+ *
+ * The host opens this from 设置 → 工具 → 设置 on this mod's row, so the 书库与阅读 and
+ * 翻页 options ship with the tool instead of being baked into the shell.
+ */
+export function mountSettings(container: HTMLElement): () => void {
+  const root = createRoot(container)
+  root.render(createElement(LibrarySettingsPage))
+  return () => root.unmount()
 }
 
-const mod: LibraryMod = { mount }
+export interface LibraryMod {
+  mount(container: HTMLElement): () => void
+  mountSettings(container: HTMLElement): () => void
+}
+
+const mod: LibraryMod = { mount, mountSettings }
 
 export default mod
 

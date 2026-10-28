@@ -1275,10 +1275,16 @@ select.input {
 
 .rail-slot {
   transition:
-    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    transform 260ms cubic-bezier(0.2, 0, 0, 1),
     background-color 160ms ease,
     opacity 160ms ease;
   will-change: transform;
+  touch-action: none;
+}
+
+/* tiles sliding out of the dragged tile's way */
+.rail-slot.shifted {
+  transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rail-item.dragging {
@@ -1297,17 +1303,14 @@ select.input {
 .rail-add {
   margin-top: var(--sp-1);
   color: var(--md-primary);
-  border: 1px dashed color-mix(in srgb, var(--md-outline) 55%, transparent);
+  border: none;
 }
 
 .rail-add:hover {
-  border-color: var(--md-primary);
   background: color-mix(in srgb, var(--md-primary) 10%, transparent);
 }
 
 .rail-add.active {
-  border-style: solid;
-  border-color: var(--md-primary);
   background: var(--md-secondary-container);
 }
 
@@ -1316,4 +1319,199 @@ select.input {
   .add-tool-drop {
     transition: none;
   }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Rail: drag affordance (three bars) on mod tiles                     */
+/* ------------------------------------------------------------------ */
+
+.rail-item-grip {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 3px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+}
+
+.rail-item-grip i {
+  display: block;
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+/* the affordance is what tells the user a tile can be moved, so it stays visible
+   for mods and only fades for built-ins */
+.rail-item-grip {
+  opacity: 0.45;
+}
+
+.rail-item:hover .rail-item-grip,
+.rail-item.dragging .rail-item-grip {
+  opacity: 0.85;
+}
+
+.rail.expanded .rail-item-grip {
+  left: 8px;
+  opacity: 0.6;
+}
+
+/* ------------------------------------------------------------------ */
+/* 设置 → 工具                                                         */
+/* ------------------------------------------------------------------ */
+
+/* the card used to have no padding, so text and buttons touched the border */
+.tools-card {
+  padding: var(--sp-2) var(--sp-4);
+}
+
+.tools-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 12px 0;
+}
+
+.tools-row.divided {
+  border-top: 1px solid color-mix(in srgb, var(--md-outline-variant) 45%, transparent);
+}
+
+.tools-row-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-primary) 12%, transparent);
+}
+
+.tools-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tools-row-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tools-row-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+  padding-right: 2px;
+}
+
+.tools-format {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 0;
+}
+
+.tools-format-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tools-format-body {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--md-on-surface-variant);
+}
+
+.tools-format-body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 插件设置（二级页面）                                                 */
+/* ------------------------------------------------------------------ */
+
+.mod-settings-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mod-settings-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid color-mix(in srgb, var(--md-outline-variant) 50%, transparent);
+  flex: 0 0 auto;
+}
+
+.mod-settings-back {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.mod-settings-back:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
+}
+
+.mod-settings-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-primary) 14%, transparent);
+  color: var(--md-primary);
+}
+
+.mod-settings-title {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-4) var(--sp-5) var(--sp-6);
 }

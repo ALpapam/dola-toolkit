@@ -85,6 +85,8 @@ export const Dialog = bridge.ui.Dialog
 export const Menu = bridge.ui.Menu
 export const Empty = bridge.ui.Empty
 export const Spinner = bridge.ui.Spinner
+export const SettingRow = bridge.ui.SettingRow
+export const Switch = bridge.ui.Switch
 
 /* ------------------------------------------------------------------ */
 /* Icon / toast / format / hooks                                        */

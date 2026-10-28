@@ -5,6 +5,7 @@ import { Icon } from './ui/Icon'
 import { HomePage } from './pages/Home'
 import { ProxyPage } from './pages/proxy/ProxyPage'
 import { AddToolPage } from './pages/AddToolPage'
+import { ModSettingsPage } from './pages/ModSettingsPage'
 import { ModHost } from './modHost/ModHost'
 import { FirstRunGuide } from './modHost/FirstRunGuide'
 import { SettingsPage } from './pages/settings/SettingsPage'
@@ -21,6 +22,8 @@ export default function App(): JSX.Element {
   const refreshMods = useApp((s) => s.refreshMods)
   /** the mod rendered by this page, if the current page id is a mod */
   const mod = mods.find((m) => m.id === page && m.enabled) ?? null
+  /** 设置 → 工具 → 设置 opens `mod-settings:<id>` */
+  const settingsModId = page.startsWith('mod-settings:') ? page.slice('mod-settings:'.length) : null
   const ready = useApp((s) => s.ready)
   const setSettings = useApp((s) => s.setSettings)
   const setReady = useApp((s) => s.setReady)
@@ -117,8 +120,11 @@ export default function App(): JSX.Element {
           {page === 'proxy' && <ProxyPage />}
           {page === 'add-tool' && <AddToolPage />}
           {page === 'settings' && <SettingsPage />}
+          {settingsModId && <ModSettingsPage modId={settingsModId} />}
           {mod && <ModHost mod={mod} />}
-          {!mod && !['home', 'proxy', 'add-tool', 'settings'].includes(page) && <HomePage />}
+          {!mod &&
+            !settingsModId &&
+            !['home', 'proxy', 'add-tool', 'settings'].includes(page) && <HomePage />}
         </div>
       </div>
       <ToastHost />

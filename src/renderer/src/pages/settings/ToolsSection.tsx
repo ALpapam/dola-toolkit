@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // 设置 → 工具
 //
-// Lists installed mods with version, size and uninstall, and explains the package
-// format so a mod author knows what `dola-mod.json` must contain.
+// Lists installed mods (open / settings / remove) and documents the package format.
+// A mod's own settings screen is a secondary page (`mod-settings:<id>`), reached by the
+// 设置 button — that is where the old 书库 settings now live.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useState } from 'react'
@@ -46,7 +47,7 @@ export function ToolsSection(): JSX.Element {
         工具以 .zip 插件包的形式安装，可拖动侧边栏图标调整顺序。把包拖到「添加工具」页面即可安装。
       </p>
 
-      <div className="set-card">
+      <div className="set-card tools-card">
         {mods.length === 0 ? (
           <Empty
             icon="extension"
@@ -54,63 +55,59 @@ export function ToolsSection(): JSX.Element {
             desc="在侧边栏点击「添加工具」，把 .zip 插件包拖进去即可。"
           />
         ) : (
-          mods.map((m) => (
-            <div
-              key={m.id}
-              className="hstack"
-              style={{ gap: 12, padding: '12px 4px', alignItems: 'center' }}
-            >
-              <span
-                style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                  width: 40,
-                  height: 40,
-                  flex: '0 0 auto',
-                  borderRadius: 12,
-                  background: 'color-mix(in srgb, var(--md-primary) 12%, transparent)'
-                }}
-              >
+          mods.map((m, index) => (
+            <div key={m.id} className={`tools-row ${index > 0 ? 'divided' : ''}`}>
+              <span className="tools-row-icon">
                 <Icon name={m.icon as IconName} size={22} />
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>
+              <div className="tools-row-text">
+                <div className="tools-row-name">
                   {m.name}
                   <span className="tiny muted" style={{ marginLeft: 8 }}>
                     v{m.version}
                   </span>
                 </div>
-                <div className="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.description || '无说明'}
-                </div>
+                <div className="tools-row-desc">{m.description || '无说明'}</div>
               </div>
-              <Button variant="text" size="sm" icon="open" onClick={() => setPage(m.id)}>
-                打开
-              </Button>
-              <Button
-                variant="text"
-                size="sm"
-                icon="delete"
-                loading={busy === m.id}
-                onClick={() => void remove(m)}
-              >
-                移除
-              </Button>
+              <div className="tools-row-actions">
+                <Button variant="text" size="sm" icon="open" onClick={() => setPage(m.id)}>
+                  打开
+                </Button>
+                <Button
+                  variant="text"
+                  size="sm"
+                  icon={m.settingsIcon as IconName}
+                  onClick={() => setPage(`mod-settings:${m.id}`)}
+                >
+                  设置
+                </Button>
+                <Button
+                  variant="text"
+                  size="sm"
+                  icon="delete"
+                  loading={busy === m.id}
+                  onClick={() => void remove(m)}
+                >
+                  移除
+                </Button>
+              </div>
             </div>
           ))
         )}
       </div>
 
-      <div className="set-card">
-        <div className="hstack" style={{ justifyContent: 'space-between', gap: 12 }}>
+      <div className="set-card tools-card">
+        <div className="tools-format">
           <div>
-            <div style={{ fontWeight: 600 }}>插件包格式</div>
-            <div className="tiny muted" style={{ marginTop: 4, lineHeight: 1.7 }}>
-              压缩包根目录需要包含 <code>dola-mod.json</code>，字段为：
-              <code> id / name / version / settingsName / createdAt / description / icon / settingsIcon / entry</code>。
-              <br />
+            <div className="tools-format-title">插件包格式</div>
+            <p className="tools-format-body">
+              压缩包根目录需要包含 <code>dola-mod.json</code>，字段为{' '}
+              <code>id / name / version / settingsName / createdAt / description / icon /
+              settingsIcon / entry</code>。
               没有该文件的包会被拒绝并删除。
-            </div>
+              <br />
+              可选导出 <code>mount</code>（工具界面）与 <code>mountSettings</code>（设置界面）。
+            </p>
           </div>
           <Button variant="tonal" size="sm" icon="folderData" onClick={() => void window.api.mods.openFolder()}>
             插件目录
