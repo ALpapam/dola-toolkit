@@ -110,6 +110,20 @@ const api = {
     remove: (id: string) => ipcRenderer.invoke(IPC.fontsRemove, id),
     reveal: () => ipcRenderer.invoke(IPC.fontsReveal)
   },
+  mods: {
+    list: () => ipcRenderer.invoke(IPC.modList),
+    importZip: (zipPath: string) => ipcRenderer.invoke(IPC.modImportZip, zipPath),
+    pickAndImport: () => ipcRenderer.invoke(IPC.modPickAndImport),
+    uninstall: (id: string) => ipcRenderer.invoke(IPC.modUninstall, id),
+    setOrder: (ids: string[]) => ipcRenderer.invoke(IPC.modSetOrder, ids),
+    markIntroduced: (id: string) => ipcRenderer.invoke(IPC.modMarkIntroduced, id),
+    openFolder: () => ipcRenderer.invoke(IPC.modOpenFolder),
+    onChanged: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on(IPC.modChanged, handler)
+      return () => ipcRenderer.removeListener(IPC.modChanged, handler)
+    }
+  },
   env: {
     platform: process.platform,
     versions: {

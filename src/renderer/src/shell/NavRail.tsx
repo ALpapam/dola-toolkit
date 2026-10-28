@@ -1,34 +1,91 @@
-import { useState } from 'react'
+// ---------------------------------------------------------------------------
+// Dola Toolkit — navigation rail
+//
+// One list holds built-in tools and installed mods, reorderable by dragging. The "+"
+// entry sits after every tool (always last in the scroll area), and Settings stays
+// pinned in the footer.
+//
+// Reordering follows the Android launcher feel: the dragged item is lifted, and the
+// items it passes slide out of the way with a transition instead of jumping when the
+// drop lands. The move happens while dragging (on every tile change), which is what
+// produces the animation.
+// ---------------------------------------------------------------------------
+
+import { useCallback, useMemo, useState } from 'react'
 import { useApp, BUILTIN_TOOLS } from '../state/app'
 import { Icon, type IconName } from '../ui/Icon'
 import { APP_VERSION_LABEL, APP_NAME } from '@shared/version'
 // Vite inlines this as an asset URL at build time.
 import logoUrl from '../assets/logo-64.png'
 
-/* ------------------------------------------------------------------ */
-/* Draggable + reorderable navigation rail                             */
-/*                                                                     */
-/* Layout contract (see .rail in base.css):                            */
-/*   collapsed → --rail-w (88px), every icon centred on the rail axis  */
-/*   expanded  → --rail-w-expanded (236px), labels fade in              */
-/* The settings entry is pinned to the footer and never joins the      */
-/* drag list, so it stays reachable no matter how many tools exist.    */
-/* ------------------------------------------------------------------ */
+/** Every rail entry: built-in tools and mods merged into one ordered list. */
+interface RailEntry {
+  id: string
+  name: string
+  icon: string
+  mod: boolean
+}
+
 export function NavRail(): JSX.Element {
   const railExpanded = useApp((s) => s.railExpanded)
-  const setPage = useApp((s) => s.setPage)
   const setRailExpanded = useApp((s) => s.setRailExpanded)
   const order = useApp((s) => s.railOrder)
   const setOrder = useApp((s) => s.setRailOrder)
+  const mods = useApp((s) => s.mods)
   const page = useApp((s) => s.page)
 
   const [dragId, setDragId] = useState<string | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
-  const [overAbove, setOverAbove] = useState(true)
 
-  const tools = order
-    .map((id) => BUILTIN_TOOLS.find((t) => t.id === id))
-    .filter((t): t is NonNullable<typeof t> => Boolean(t))
+  const entries = useMemo<RailEntry[]>(() => {
+    const builtins: RailEntry[] = BUILTIN_TOOLS.map((t) => ({
+      id: t.id,
+      name: t.name,
+      icon: t.icon,
+      mod: false
+    }))
+    const modEntries: RailEntry[] = mods
+      .filter((m) => m.enabled)
+      .map((m) => ({ id: m.id, name: m.name, icon: m.icon, mod: true }))
+
+    const byId = new Map<string, RailEntry>()
+    for (const e of [...builtins, ...modEntries]) byId.set(e.id, e)
+
+    const ordered: RailEntry[] = []
+    for (const id of order) {
+      const entry = byId.get(id)
+      if (entry) {
+        ordered.push(entry)
+        byId.delete(id)
+      }
+    }
+    // anything missing from the stored order (a freshly installed mod) goes last
+    for (const entry of byId.values()) ordered.push(entry)
+    return ordered
+  }, [mods, order])
+
+  /**
+   * Moves the dragged entry into the slot under the pointer.
+   *
+   * Called on every dragover where the target tile changed, so the list reorders
+   * continuously and the CSS transition animates the displaced items.
+   */
+  const moveTo = useCallback(
+    (targetId: string, above: boolean): void => {
+      if (!dragId || dragId === targetId) return
+      const ids = entries.map((e) => e.id)
+      const from = ids.indexOf(dragId)
+      if (from < 0 || ids.indexOf(targetId) < 0) return
+
+      const next = ids.filter((id) => id !== dragId)
+      let insertAt = next.indexOf(targetId)
+      if (insertAt < 0) return
+      if (!above) insertAt += 1
+      if (insertAt === from) return
+      next.splice(insertAt, 0, dragId)
+      setOrder(next)
+    },
+    [dragId, entries, setOrder]
+  )
 
   const onDragStart = (id: string) => (e: React.DragEvent): void => {
     e.dataTransfer.effectAllowed = 'move'
@@ -39,27 +96,12 @@ export function NavRail(): JSX.Element {
   const onDragOver = (id: string) => (e: React.DragEvent): void => {
     if (!dragId || dragId === id) return
     e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setOverId(id)
-    setOverAbove(e.clientY < rect.top + rect.height / 2)
+    moveTo(id, e.clientY < rect.top + rect.height / 2)
   }
 
-  const onDrop = (id: string) => (e: React.DragEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!dragId || dragId === id) {
-      setDragId(null)
-      setOverId(null)
-      return
-    }
-    const next = order.filter((x) => x !== dragId)
-    const targetIdx = next.indexOf(id)
-    const insertAt = overAbove ? targetIdx : targetIdx + 1
-    next.splice(insertAt, 0, dragId)
-    setOrder(next)
-    setDragId(null)
-    setOverId(null)
-  }
+  const endDrag = (): void => setDragId(null)
 
   return (
     <nav className={`rail ${railExpanded ? 'expanded' : ''}`} aria-label="工具">
@@ -72,7 +114,7 @@ export function NavRail(): JSX.Element {
           className="rail-brand-logo"
           title="返回主页"
           aria-label="返回主页"
-          onClick={() => setPage('home')}
+          onClick={() => useApp.getState().setPage('home')}
         >
           <img src={logoUrl} alt="" draggable={false} />
         </button>
@@ -82,28 +124,28 @@ export function NavRail(): JSX.Element {
         </span>
       </div>
 
-      <div className="rail-scroll" role="list">
-        {tools.map((t) => (
+      <div className={`rail-scroll ${dragId ? 'reordering' : ''}`} role="list">
+        {entries.map((t) => (
           <button
             key={t.id}
             role="listitem"
             className={[
               'rail-item',
+              'rail-slot',
               page === t.id ? 'active' : '',
               dragId === t.id ? 'dragging' : '',
-              overId === t.id && overAbove ? 'drop-above' : '',
-              overId === t.id && !overAbove ? 'drop-below' : ''
+              t.mod ? 'is-mod' : ''
             ]
               .filter(Boolean)
               .join(' ')}
             draggable
             onDragStart={onDragStart(t.id)}
             onDragOver={onDragOver(t.id)}
-            onDrop={onDrop(t.id)}
-            onDragEnd={() => {
-              setDragId(null)
-              setOverId(null)
+            onDrop={(e) => {
+              e.preventDefault()
+              endDrag()
             }}
+            onDragEnd={endDrag}
             onClick={() => useApp.getState().setPage(t.id)}
             title={railExpanded ? undefined : t.name}
             aria-label={t.name}
@@ -115,6 +157,20 @@ export function NavRail(): JSX.Element {
             <span className="rail-item-label">{t.name}</span>
           </button>
         ))}
+
+        {/* always after every tool, per the requested layout */}
+        <button
+          className={`rail-item rail-add ${page === 'add-tool' ? 'active' : ''}`}
+          onClick={() => useApp.getState().setPage('add-tool')}
+          title={railExpanded ? undefined : '添加工具'}
+          aria-label="添加工具"
+          aria-current={page === 'add-tool' ? 'page' : undefined}
+        >
+          <span className="rail-item-icon">
+            <Icon name="add" size={22} />
+          </span>
+          <span className="rail-item-label">添加工具</span>
+        </button>
       </div>
 
       <div className="rail-footer">

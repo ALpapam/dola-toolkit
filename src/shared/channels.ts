@@ -36,6 +36,16 @@ export const IPC = {
   updateTakePending: 'update:take-pending',
   updateProgress: 'update:progress',
   updateOpenReleases: 'update:open-releases',
+  /** mods / sidebar tools */
+  modList: 'mod:list',
+  modImportZip: 'mod:import-zip',
+  modPickAndImport: 'mod:pick-and-import',
+  modUninstall: 'mod:uninstall',
+  modSetOrder: 'mod:set-order',
+  modMarkIntroduced: 'mod:mark-introduced',
+  modOpenFolder: 'mod:open-folder',
+  /** pushed to renderers whenever the installed set changes */
+  modChanged: 'mod:changed',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
   appCapture: 'app:capture',

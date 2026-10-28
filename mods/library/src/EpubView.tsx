@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from '../../ui/Icon'
-import { Spinner } from '../../ui/controls'
-import { useApp } from '../../state/app'
+import { Icon } from './host'
+import { Spinner } from './host'
+import { useApp } from './host'
 import { epubFontCss } from './fonts'
 import { attachGestureBridge } from './useDragFlip'
 import {

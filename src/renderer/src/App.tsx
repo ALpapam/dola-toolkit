@@ -4,22 +4,37 @@ import { useApp } from './state/app'
 import { Icon } from './ui/Icon'
 import { HomePage } from './pages/Home'
 import { ProxyPage } from './pages/proxy/ProxyPage'
-import { LibraryPage } from './pages/library/LibraryPage'
+import { AddToolPage } from './pages/AddToolPage'
+import { ModHost } from './modHost/ModHost'
+import { FirstRunGuide } from './modHost/FirstRunGuide'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { ToastHost } from './ui/toast'
 import { Button, Dialog, Switch } from './ui/controls'
 import { NavRail } from './shell/NavRail'
 import { TitleBar } from './shell/TitleBar'
 import { initThemeListeners, useTheme } from './theme/store'
-import { applyAppFont, installFontFaces, resolveReadingFamily } from './pages/library/fonts'
+import { applyAppFont, installFontFaces, resolveReadingFamily } from './lib/fonts'
 
 export default function App(): JSX.Element {
   const page = useApp((s) => s.page)
+  const mods = useApp((s) => s.mods)
+  const refreshMods = useApp((s) => s.refreshMods)
+  /** the mod rendered by this page, if the current page id is a mod */
+  const mod = mods.find((m) => m.id === page && m.enabled) ?? null
   const ready = useApp((s) => s.ready)
   const setSettings = useApp((s) => s.setSettings)
   const setReady = useApp((s) => s.setReady)
   const setFonts = useApp((s) => s.setFonts)
   const setReadingFamily = useApp((s) => s.setReadingFamily)
+
+  useEffect(() => {
+    void refreshMods()
+    // the main process pushes this after install/uninstall, so the rail never shows
+    // a stale list (a mod added elsewhere appears immediately)
+    return window.api.mods.onChanged(() => {
+      void refreshMods()
+    })
+  }, [refreshMods])
   const themeSettings = useTheme((s) => s.setSettings)
   const refresh = useTheme((s) => s.refresh)
   const [bootError, setBootError] = useState<string | null>(null)
@@ -100,12 +115,14 @@ export default function App(): JSX.Element {
         <div className="page-host">
           {page === 'home' && <HomePage />}
           {page === 'proxy' && <ProxyPage />}
-          {page === 'library' && <LibraryPage />}
+          {page === 'add-tool' && <AddToolPage />}
           {page === 'settings' && <SettingsPage />}
-          {!['home', 'proxy', 'library', 'settings'].includes(page) && <HomePage />}
+          {mod && <ModHost mod={mod} />}
+          {!mod && !['home', 'proxy', 'add-tool', 'settings'].includes(page) && <HomePage />}
         </div>
       </div>
       <ToastHost />
+      <FirstRunGuide />
       <ClosePrompt />
       {!ready ? (
         <div

@@ -19,14 +19,28 @@ export const BUILTIN_TOOLS: ToolDef[] = [
     desc: '自建节点 · Xray / Mihomo / Sing-box 内核',
     builtin: true
   },
-  {
-    id: 'library',
-    name: '书库',
-    icon: 'library',
-    desc: 'EPUB / PDF / FB2 / MOBI / TXT / RTF 阅读与 AI 归类',
-    builtin: true
-  }
 ]
+
+/**
+ * Installed mods, mirrored from the main process.
+ *
+ * The rail renders built-in tools and mods from one list; keeping the mods here means
+ * every consumer (rail, settings, first-run guide) reads the same state.
+ */
+export interface ModEntry {
+  id: string
+  name: string
+  version: string
+  description: string
+  icon: string
+  settingsIcon: string
+  settingsName: string
+  createdAt: string
+  entry: string
+  firstRun: boolean
+  enabled: boolean
+  installedAt: number
+}
 
 export interface LoadedFontInfo {
   id: string
@@ -45,6 +59,8 @@ interface AppState {
   railExpanded: boolean
   /** order of tool ids in the rail; the settings entry is pinned last */
   railOrder: string[]
+  /** installed mods, in rail order */
+  mods: ModEntry[]
   ready: boolean
   /** every font family the reader can use (bundled + imported) */
   fonts: LoadedFontInfo[]
@@ -54,6 +70,9 @@ interface AppState {
   setSettings: (s: Settings) => void
   setRailExpanded: (v: boolean) => void
   setRailOrder: (o: string[]) => void
+  setMods: (m: ModEntry[]) => void
+  /** refresh from the main process */
+  refreshMods: () => Promise<void>
   setReady: (v: boolean) => void
   setFonts: (fonts: LoadedFontInfo[]) => void
   setReadingFamily: (family: string) => void
@@ -64,11 +83,9 @@ const readOrder = (): string[] => {
     const raw = localStorage.getItem('dola.railOrder')
     if (raw) {
       const arr = JSON.parse(raw) as string[]
-      if (Array.isArray(arr)) {
-        const valid = arr.filter((id) => BUILTIN_TOOLS.some((t) => t.id === id))
-        for (const t of BUILTIN_TOOLS) if (!valid.includes(t.id)) valid.push(t.id)
-        return valid
-      }
+      // mod ids are validated when the rail merges the two lists; here only the
+      // built-in ones can be trusted, and anything else is appended later
+      if (Array.isArray(arr)) return arr.filter((id) => typeof id === 'string')
     }
   } catch {
     /* ignore */
@@ -89,6 +106,7 @@ export const useApp = create<AppState>((set) => ({
   settings: null,
   railExpanded: readExpanded(),
   railOrder: readOrder(),
+  mods: [],
   ready: false,
   fonts: [],
   readingFamily: 'serif',
@@ -109,6 +127,15 @@ export const useApp = create<AppState>((set) => ({
       /* ignore */
     }
     set({ railOrder })
+  },
+  setMods: (mods) => set({ mods }),
+  refreshMods: async () => {
+    try {
+      const mods = (await window.api.mods.list()) as ModEntry[]
+      set({ mods })
+    } catch {
+      /* main process not ready yet */
+    }
   },
   setReady: (ready) => set({ ready }),
   setFonts: (fonts) => set({ fonts }),

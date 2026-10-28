@@ -613,3 +613,32 @@ export interface FontList {
   /** id of the bundled default family */
   defaultId: string
 }
+
+// ---------------------------------------------------------------------------
+// Mods (sidebar tools installed from a .zip package)
+// ---------------------------------------------------------------------------
+
+export interface ModRecordInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  icon: string
+  settingsIcon: string
+  settingsName: string
+  createdAt: string
+  entry: string
+  installedAt: number
+  /** true until the first-run guide has been dismissed once */
+  firstRun: boolean
+  enabled: boolean
+}
+
+export interface ModImportResult {
+  ok: boolean
+  canceled?: boolean
+  error?: string
+  mod?: ModRecordInfo
+  /** true when an older version of the same mod was replaced */
+  upgraded?: boolean
+}

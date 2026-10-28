@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BookRecord, FlipAnimation, LibrarySettings } from '@shared/types'
-import { useApp } from '../../state/app'
-import { Icon } from '../../ui/Icon'
-import { IconButton, Slider, Spinner } from '../../ui/controls'
-import { toast } from '../../ui/toast'
-import { useHotkey } from '../../ui/hooks'
+import { useApp } from './host'
+import { Icon } from './host'
+import { IconButton, Slider, Spinner } from './host'
+import { toast } from './host'
+import { useHotkey } from './host'
 import { buildSource, type RenderSource } from './formats'
 import { EpubView, type EpubViewHandle } from './EpubView'
 import { paginate, type PageSlice } from './paginate'
@@ -30,8 +30,14 @@ async function getPdfjs(): Promise<typeof import('pdfjs-dist')> {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
       const pdfjs = await import('pdfjs-dist')
-      const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+      // The app's CSP (`script-src 'self' file: dola-mod:`) forbids blob: and
+      // data: workers, and a mod ships as a single index.js with no separate
+      // worker file to point `workerSrc` at. Importing pdf.js' worker entry
+      // installs `globalThis.pdfjsWorker`; pdf.js then runs its message handler
+      // on the main thread through its own "fake worker" path instead of
+      // failing on a CSP-blocked Worker. The packaged app takes the same path
+      // for the same reason.
+      await import('pdfjs-dist/build/pdf.worker.min.mjs')
       return pdfjs
     })()
   }

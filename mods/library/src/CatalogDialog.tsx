@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { CatalogBook, CatalogResult } from '@shared/types'
-import { Button, Dialog, Empty, IconButton, Spinner, Tabs, TextInput } from '../../ui/controls'
-import { Icon } from '../../ui/Icon'
-import { toast } from '../../ui/toast'
+import { Button, Dialog, Empty, IconButton, Spinner, Tabs, TextInput } from './host'
+import { Icon } from './host'
+import { toast } from './host'
 import { useLibrary } from './store'
 
 type Source = CatalogBook['source']

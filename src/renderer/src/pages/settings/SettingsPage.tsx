@@ -5,20 +5,21 @@ import { useTheme } from '../../theme/store'
 import { Button, Dialog, IconButton, Segmented, Select, SettingRow, Slider, Spinner, Switch, TextArea, TextInput } from '../../ui/controls'
 import { Icon, type IconName } from '../../ui/Icon'
 import { toast } from '../../ui/toast'
+import { ToolsSection } from './ToolsSection'
 import { fmtDate } from '../../ui/format'
 import { APP_NAME, APP_NAME_CN, APP_VERSION_LABEL, GITHUB_REPO } from '@shared/version'
 import { THEME_PRESETS, presetById } from '@shared/presets'
 import { DEFAULT_READER_FONT_FAMILY, DEFAULT_READER_FONT_ID, SYSTEM_READING_STACK } from '@shared/fonts'
-import { applyAppFont, installFontFaces, resolveReadingFamily } from '../library/fonts'
+import { applyAppFont, installFontFaces, resolveReadingFamily } from '../../lib/fonts'
 
-type Section = 'appearance' | 'ai' | 'sync' | 'proxy' | 'library' | 'general' | 'about'
+type Section = 'appearance' | 'ai' | 'sync' | 'proxy' | 'tools' | 'general' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'appearance', label: '外观与取色', icon: 'palette' },
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
   { id: 'proxy', label: '代理', icon: 'proxy' },
-  { id: 'library', label: '书库与阅读', icon: 'bookOpen' },
+  { id: 'tools', label: '工具', icon: 'extension' },
   { id: 'general', label: '通用', icon: 'tune' },
   { id: 'about', label: '关于', icon: 'info' }
 ]
@@ -89,7 +90,7 @@ export function SettingsPage(): JSX.Element {
           {section === 'ai' && <AiSection settings={settings} patch={patch} />}
           {section === 'sync' && <SyncSection settings={settings} patch={patch} />}
           {section === 'proxy' && <ProxySection settings={settings} patch={patch} />}
-          {section === 'library' && <LibrarySection settings={settings} patch={patch} />}
+          {section === 'tools' && <ToolsSection />}
           {section === 'general' && <GeneralSection settings={settings} patch={patch} />}
           {section === 'about' && <AboutSection />}
         </div>
@@ -549,69 +550,6 @@ function FontSection({
   )
 }
 
-/* ================================================================== */
-/* Page turn (shown inside 书库与阅读)                                  */
-/* ================================================================== */
-function FlipSection({
-  settings,
-  patch
-}: {
-  settings: Settings
-  patch: (p: SettingsPatch) => Promise<void>
-}): JSX.Element {
-  const rd = settings.reader
-  return (
-    <>
-      <h3 className="set-section-title" style={{ fontSize: 14 }}>
-        <Icon name="bookOpen" size={18} /> 翻页
-      </h3>
-      <p className="set-section-desc">
-        向左/右拖动书页边缘即可翻页；拖过触发距离或快速甩动生效，否则自动回弹。
-      </p>
-      <div className="set-card">
-        <SettingRow title="翻页动画" desc="拖动页面时使用的过渡效果">
-          <Segmented
-            value={rd.flipAnimation}
-            onChange={(v) => void patch({ reader: { flipAnimation: v as typeof rd.flipAnimation } })}
-            options={[
-              { value: 'cover', label: '仿真翻页' },
-              { value: 'slide', label: '平移' },
-              { value: 'curl', label: '卷曲' },
-              { value: 'none', label: '无' }
-            ]}
-          />
-        </SettingRow>
-        {/* 翻页方式：点按页面左右三分之一。没有开关可配，这里只做说明 */}
-        <SettingRow
-          title="翻页方式"
-          desc="点按页面右侧 1/3 看下一页，点按左侧 1/3 看上一页；中间 1/3 不翻页，可正常选中文字。也可使用悬浮的 < > 按钮或方向键"
-        />
-        {/*
-          GPU 开关。关闭后主进程在启动时调用 app.disableHardwareAcceleration()，
-          整个界面改为软件渲染；翻页引擎会自动切到低开销档（更少的切片、关闭
-          柔和投影），保证没有硬件加速的机器也能流畅翻页。
-        */}
-        <SettingRow
-          title="启用 GPU 加速"
-          desc={
-            rd.gpuAcceleration
-              ? '使用硬件加速渲染，动画最流畅。显卡驱动异常或画面撕裂时请关闭'
-              : '已关闭硬件加速：软件渲染 + 低开销翻页，兼容性最好。更改需重启应用生效'
-          }
-        >
-          <Switch
-            checked={rd.gpuAcceleration}
-            onChange={(v) => {
-              void patch({ reader: { gpuAcceleration: v } })
-              toast.info(v ? 'GPU 加速已开启，重启后生效' : 'GPU 加速已关闭，重启后生效')
-            }}
-          />
-        </SettingRow>
-      </div>
-    </>
-  )
-}
-
 function fmtSize(bytes: number): string {
   if (!bytes) return '—'
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -1048,65 +986,6 @@ function ProxySection({ settings, patch }: { settings: Settings; patch: (p: Sett
           <Switch checked={p.autoRestart} onChange={(v) => void patch({ proxy: { autoRestart: v } })} />
         </SettingRow>
       </div>
-    </>
-  )
-}
-
-/* ================================================================== */
-/* Library                                                             */
-/* ================================================================== */
-function LibrarySection({ settings, patch }: { settings: Settings; patch: (p: SettingsPatch) => Promise<void> }): JSX.Element {
-  const l = settings.library
-  return (
-    <>
-      <h2 className="set-section-title">
-        <Icon name="bookOpen" size={20} /> 书库与阅读
-      </h2>
-      <p className="set-section-desc">控制书籍导入方式、书架显示与翻页交互。</p>
-      <div className="set-card">
-        <SettingRow title="导入方式" desc="托管会将文件复制到 Dola Toolkit 数据目录，引用则保留原路径">
-          <Select
-            value={l.importMode}
-            onChange={(v) => void patch({ library: { importMode: v as typeof l.importMode } })}
-            options={[
-              { value: 'managed', label: '托管副本' },
-              { value: 'reference', label: '引用原文件' }
-            ]}
-          />
-        </SettingRow>
-        <SettingRow title="双页模式" desc="宽窗口自动双页；也可强制单页或双页">
-          <Segmented
-            value={l.spreadMode}
-            onChange={(v) => void patch({ library: { spreadMode: v as typeof l.spreadMode } })}
-            options={[
-              { value: 'auto', icon: 'dualScreen', label: '自动' },
-              { value: 'always', icon: 'splitscreen', label: '双页' },
-              { value: 'never', icon: 'readerMode', label: '单页' }
-            ]}
-          />
-        </SettingRow>
-        <SettingRow title="封面尺寸" desc={`${l.coverWidth}px`}>
-          <div style={{ width: 200 }}>
-            <Slider value={l.coverWidth} min={120} max={260} step={10} onChange={(v) => void patch({ library: { coverWidth: v } })} />
-          </div>
-        </SettingRow>
-        <SettingRow title="AI 自动归类" desc="导入后自动判断系列（需要配置 AI）">
-          <Switch checked={l.aiAutoClassify} onChange={(v) => void patch({ library: { aiAutoClassify: v } })} />
-        </SettingRow>
-        <SettingRow title="默认视图">
-          <Segmented
-            value={l.defaultView}
-            onChange={(v) => void patch({ library: { defaultView: v as typeof l.defaultView } })}
-            options={[
-              { value: 'grid', icon: 'grid', label: '网格' },
-              { value: 'list', icon: 'list', label: '列表' }
-            ]}
-          />
-        </SettingRow>
-      </div>
-
-      {/* page-turn behaviour belongs with the reading options */}
-      <FlipSection settings={settings} patch={patch} />
     </>
   )
 }

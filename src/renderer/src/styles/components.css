@@ -1170,3 +1170,150 @@ select.input {
   background: color-mix(in srgb, #b26a00 18%, transparent);
   color: #b26a00;
 }
+
+/* ------------------------------------------------------------------ */
+/* Mod pages & the "add tool" page                                     */
+/* ------------------------------------------------------------------ */
+
+.mod-page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-tool-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+  padding: var(--sp-6);
+}
+
+/* the big target in the middle: 200px, dashed, breathes when a file is over it */
+.add-tool-drop {
+  width: 200px;
+  height: 200px;
+  border-radius: 36px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed color-mix(in srgb, var(--md-outline) 60%, transparent);
+  background: color-mix(in srgb, var(--md-primary) 6%, transparent);
+  color: var(--md-primary);
+  cursor: pointer;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.add-tool-drop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-primary) 12%, transparent);
+  border-color: var(--md-primary);
+  transform: scale(1.02);
+}
+
+.add-tool-drop:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.add-tool-drop.drag-over {
+  background: color-mix(in srgb, var(--md-primary) 18%, transparent);
+  border-color: var(--md-primary);
+  border-style: solid;
+  transform: scale(1.05);
+}
+
+.add-tool-drop:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.add-tool-plus {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.add-tool-hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--md-on-surface-variant);
+  text-align: center;
+  max-width: 420px;
+  line-height: 1.6;
+}
+
+.add-tool-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 520px;
+  padding: 10px 14px;
+  border-radius: var(--shape-md);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--md-on-error-container, var(--md-error));
+  background: color-mix(in srgb, var(--md-error) 14%, transparent);
+  word-break: break-word;
+}
+
+.add-tool-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rail: reorder animation (Android launcher feel)                     */
+/*                                                                     */
+/* The list reorders while dragging, so every item that changes slot    */
+/* animates into place. The dragged one is lifted instead of sliding.   */
+/* ------------------------------------------------------------------ */
+
+.rail-slot {
+  transition:
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    background-color 160ms ease,
+    opacity 160ms ease;
+  will-change: transform;
+}
+
+.rail-item.dragging {
+  opacity: 0.55;
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--md-primary) 12%, transparent);
+  cursor: grabbing;
+}
+
+.rail-scroll.reordering .rail-item:not(.dragging) {
+  /* a touch of stagger makes the shift read as movement, not a jump */
+  transition-delay: 8ms;
+}
+
+/* the add entry keeps a quieter look than a real tool */
+.rail-add {
+  margin-top: var(--sp-1);
+  color: var(--md-primary);
+  border: 1px dashed color-mix(in srgb, var(--md-outline) 55%, transparent);
+}
+
+.rail-add:hover {
+  border-color: var(--md-primary);
+  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+}
+
+.rail-add.active {
+  border-style: solid;
+  border-color: var(--md-primary);
+  background: var(--md-secondary-container);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-slot,
+  .add-tool-drop {
+    transition: none;
+  }
+}

@@ -18,6 +18,7 @@ import { registerAiIpc } from './ai'
 import { registerSyncIpc } from './sync'
 import { registerFontsIpc } from './fonts'
 import { registerUpdatesIpc } from './updates'
+import { registerModsIpc } from '../mods/ipc'
 
 type Registrar = () => void
 
@@ -51,4 +52,5 @@ export function registerAllIpc(): void {
   safe('fonts', registerFontsIpc)
   // self-update + core updates
   safe('updates', registerUpdatesIpc)
+  safe('mods', registerModsIpc)
 }

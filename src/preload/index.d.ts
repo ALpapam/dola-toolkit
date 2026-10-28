@@ -134,6 +134,18 @@ export interface DolaToolkitApi {
     remove(id: string): Promise<{ ok: boolean; reason?: string }>
     reveal(): Promise<string>
   }
+  mods: {
+    list(): Promise<import('@shared/types').ModRecordInfo[]>
+    /** installs from an explicit zip path (drag-and-drop) */
+    importZip(zipPath: string): Promise<import('@shared/types').ModImportResult>
+    /** opens a file dialog, then installs */
+    pickAndImport(): Promise<import('@shared/types').ModImportResult>
+    uninstall(id: string): Promise<{ ok: boolean; error?: string }>
+    setOrder(ids: string[]): Promise<{ ok: boolean }>
+    markIntroduced(id: string): Promise<{ ok: boolean }>
+    openFolder(): Promise<string>
+    onChanged(cb: () => void): () => void
+  }
   env: {
     platform: string
     versions: Record<string, string>

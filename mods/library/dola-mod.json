@@ -1,0 +1,11 @@
+{
+  "id": "library",
+  "name": "书库",
+  "version": "1.0.0",
+  "settingsName": "书库设置",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "description": "支持 EPUB / PDF / FB2 / MOBI / TXT / RTF 的本地书库，内置阅读器、AI 自动归类与 WebDAV 同步。\n\n拖动或点击右上角的按钮导入书籍；在「书库设置」中可配置阅读字体、翻页动画与同步账号。",
+  "icon": "library",
+  "settingsIcon": "settings",
+  "entry": "index.js"
+}

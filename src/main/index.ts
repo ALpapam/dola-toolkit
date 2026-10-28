@@ -93,6 +93,18 @@ applyEarlyGpuPreference()
 // refuses to use it as a font source.
 protocol.registerSchemesAsPrivileged([
   {
+    // mod bundles are loaded with <script src="dola-mod://…">, so the scheme has to be
+    // standard+secure and CORS-enabled like the font one
+    scheme: 'dola-mod',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  },
+  {
     scheme: 'dola-font',
     privileges: {
       standard: true,
@@ -209,6 +221,8 @@ let allowWindowDestroy = false
       try {
         const { registerFontProtocol } = await import('./fonts')
         registerFontProtocol()
+        const { registerModProtocol } = await import('./mods/protocol')
+        registerModProtocol()
       } catch (e) {
         writeCrashLog('registerFontProtocol', e)
       }
