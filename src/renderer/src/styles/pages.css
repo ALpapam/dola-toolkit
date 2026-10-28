@@ -1898,6 +1898,12 @@
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: var(--sp-5) var(--sp-4);
   padding-bottom: var(--sp-6);
+  /*
+   * The drag code converts a tile's offsetLeft/offsetTop into page coordinates by
+   * adding the grid's own rect, which only holds when the grid IS the offsetParent.
+   * Without this the tiles were anchored ~53px off from the cursor.
+   */
+  position: relative;
 }
 
 

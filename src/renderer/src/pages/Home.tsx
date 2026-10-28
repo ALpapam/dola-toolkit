@@ -291,13 +291,19 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
     if (!el) return
     const p = pointerRef.current
     const g = grabRef.current
-    // read the untransformed box, then place it under the pointer
-    el.style.transform = 'none'
-    const box = el.getBoundingClientRect()
-    const dx = p.x - g.dx - box.left
-    const dy = p.y - g.dy - box.top
-    el.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`
+    const grid = gridRef.current
+    if (!grid) return
+    /*
+     * Anchor from the tile's LAYOUT box (offsetLeft/Top inside the grid) instead of a
+     * rect. A rect includes the very transform being applied, so reading it back fed the
+     * transform into its own calculation; reading layout keeps it exact.
+     */
+    const originX = grid.getBoundingClientRect().left + grid.clientLeft + el.offsetLeft
+    const originY = grid.getBoundingClientRect().top + grid.clientTop + el.offsetTop
+    const dx = p.x - g.dx - originX
+    const dy = p.y - g.dy - originY
     el.style.transition = 'none'
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`
     el.style.zIndex = '3'
   })
 
@@ -342,8 +348,12 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
     return Math.max(0, Math.min(count - 1, row * cols + col))
   }
 
+  /** tile whose imperative transform must be cleared after the commit renders */
+  const clearAfter = useRef<string | null>(null)
+
   const endDrag = (): void => {
     const drag = dragRef.current
+    if (drag?.id) clearAfter.current = drag.id
     dragRef.current = null
     suppressClick.current = Boolean(drag?.moved)
     if (drag?.moved) {
@@ -353,6 +363,29 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
     }
     setDragId(null)
   }
+
+  /*
+   * Release the dragged tile into its slot.
+   *
+   * The transform is set imperatively, so React never clears it — without this the tile
+   * stayed wherever the pointer left it ("卡在原处"). Setting a transition first makes
+   * the removal animate instead of snapping.
+   */
+  useEffect(() => {
+    if (dragId) return
+    const id = clearAfter.current
+    if (!id) return
+    clearAfter.current = null
+    const el = tileRefs.current.get(id)
+    if (!el) return
+    el.style.transition = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)'
+    el.style.zIndex = ''
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.style.transform = ''
+      })
+    })
+  }, [dragId])
 
   useEffect(() => {
     if (!dragId) return

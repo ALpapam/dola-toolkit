@@ -198,9 +198,14 @@ export function NavRail(): JSX.Element {
     if (!dx && !dy) return
     el.style.transition = 'none'
     el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`
+    // two frames: the first paints the corrected position, the second starts the
+    // transition from it (one frame can be coalesced into a single style recalc, which
+    // skips the animation and snaps)
     requestAnimationFrame(() => {
-      el.style.transition = 'transform 180ms cubic-bezier(0.2, 0, 0, 1)'
-      el.style.transform = ''
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 180ms cubic-bezier(0.2, 0, 0, 1)'
+        el.style.transform = ''
+      })
     })
   })
 
@@ -211,17 +216,25 @@ export function NavRail(): JSX.Element {
     const list = listRef.current
     if (!el || !list) return
 
-    const listTop = list.getBoundingClientRect().top + list.scrollTop
-    const tileTop = el.getBoundingClientRect().top + list.scrollTop - listTop
-    // measure the gap from the tiles themselves: the list can scroll or resize
-    const tops = [...itemRefs.current.values()]
-      .map((node) => node.getBoundingClientRect().top + list.scrollTop - listTop)
-      .sort((a, b) => a - b)
+    /*
+     * Measure from LAYOUT offsets, never from getBoundingClientRect.
+     *
+     * Rect positions include the transforms this component applies, so measuring them
+     * while neighbouring tiles are mid-animation produced a wrong pitch — and a wrong
+     * pitch makes the target index jump several slots at a time (the "一跳一跳" report).
+     * offsetTop is the untransformed layout position, which is exactly what we want.
+     */
+    const tops = [...itemRefs.current.values()].map((node) => node.offsetTop).sort((a, b) => a - b)
     const pitch = tops.length > 1 ? tops[1] - tops[0] : el.offsetHeight + 4
+    const tileTop = el.offsetTop
+
+    // clear any transform left over from a previous drag on this very tile
+    el.style.transform = ''
+    el.style.transition = ''
 
     session.current = {
       id,
-      grabOffset: e.clientY - (listTop - list.scrollTop) - tileTop,
+      grabOffset: e.clientY - list.getBoundingClientRect().top + list.scrollTop - tileTop,
       startTop: tileTop,
       pitch: pitch > 8 ? pitch : el.offsetHeight + 4,
       ids: entries.map((x) => x.id),
