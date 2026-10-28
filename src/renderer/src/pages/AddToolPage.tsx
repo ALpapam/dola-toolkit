@@ -97,9 +97,9 @@ export function AddToolPage(): JSX.Element {
       setError(null)
       void (async () => {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const filePath = (file as any).path as string | undefined
-          if (!filePath) throw new Error('无法读取拖入的文件路径')
+          // Chromium removed File.path; the preload resolves it through webUtils
+          const filePath = window.api.filePath(file)
+          if (!filePath) throw new Error('无法读取拖入的文件路径，请改用「选择 .zip 插件包」按钮')
           const res = (await window.api.mods.importZip(filePath)) as ImportOutcome
           await finish(res)
         } catch (err) {

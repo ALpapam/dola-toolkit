@@ -2071,3 +2071,28 @@
 .status-row {
   background: var(--md-surface-container);
 }
+
+/* ------------------------------------------------------------------ */
+/* 主菜单：快捷方式拖动                                                 */
+/* ------------------------------------------------------------------ */
+
+.shortcut {
+  position: relative;
+  touch-action: none;
+}
+
+.shortcut.dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 10px 18px rgb(0 0 0 / 32%));
+}
+
+/* the page itself is draggable to change page — keep the text from being selected */
+.home-scroll {
+  user-select: none;
+  touch-action: pan-y;
+}
+
+/* while the mouse is pulling the page, snapping must be off or it springs back */
+.home-scroll.dragging-page {
+  scroll-snap-type: none;
+}

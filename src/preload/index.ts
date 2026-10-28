@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/channels'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -122,6 +122,20 @@ const api = {
       const handler = (): void => cb()
       ipcRenderer.on(IPC.modChanged, handler)
       return () => ipcRenderer.removeListener(IPC.modChanged, handler)
+    }
+  },
+  /**
+   * Absolute path of a dropped file.
+   *
+   * `File.path` was removed from Chromium, so drag-and-drop importers must ask the
+   * preload for it via webUtils. The File object comes across the context bridge by
+   * reference (same renderer process), which is what makes this work.
+   */
+  filePath: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
     }
   },
   env: {

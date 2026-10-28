@@ -146,6 +146,8 @@ export interface DolaToolkitApi {
     openFolder(): Promise<string>
     onChanged(cb: () => void): () => void
   }
+  /** absolute path of a dropped file (File.path no longer exists in Chromium) */
+  filePath(file: File): string
   env: {
     platform: string
     versions: Record<string, string>
