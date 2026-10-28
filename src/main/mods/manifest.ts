@@ -42,6 +42,8 @@ export interface ModManifest {
    * the sync list.
    */
   backupFile: string
+  /** human description of what backupFile contains, shown in the sync list */
+  backupLabel: string
 }
 
 export interface ModInfo extends ModManifest {
@@ -102,6 +104,7 @@ export function parseManifest(raw: string, dir: string): ModInfo {
     settingsIcon: asString(data.settingsIcon, 'settingsIcon', false) || 'tune',
     entry,
     backupFile: asString(data.backupFile, 'backupFile', false),
+    backupLabel: asString(data.backupLabel, 'backupLabel', false),
     dir
   }
 }

@@ -638,6 +638,8 @@ export interface ModRecordInfo {
   entry: string
   /** file (relative to userData) this tool wants backed up, when it declares one */
   backupFile?: string
+  /** human description of that backup payload */
+  backupLabel?: string
   installedAt: number
   /** true until the first-run guide has been dismissed once */
   firstRun: boolean

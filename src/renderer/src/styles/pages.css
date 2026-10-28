@@ -1795,7 +1795,8 @@
   scroll-snap-stop: always;
   display: flex;
   flex-direction: column;
-  padding: var(--sp-6) var(--sp-7);
+  /* the title bar uses --sp-4 on the left, so page headers line up with it */
+  padding: var(--sp-5) var(--sp-6) var(--sp-7) var(--sp-4);
   box-sizing: border-box;
 }
 
@@ -1866,12 +1867,13 @@
   display: flex;
   align-items: baseline;
   gap: var(--sp-3);
-  padding-bottom: var(--sp-4);
+  padding: 0 var(--sp-2) var(--sp-5);
 }
 
 .home-page-title {
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .shortcut-grid {
@@ -1885,14 +1887,7 @@
   padding-bottom: var(--sp-6);
 }
 
-/* right-to-left fill, like icons dropped from the top-right corner */
-.shortcut-grid {
-  direction: rtl;
-}
 
-.shortcut-grid > * {
-  direction: ltr;
-}
 
 .shortcut {
   display: flex;
@@ -1959,9 +1954,35 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: 14px var(--sp-4);
+  padding: 16px var(--sp-4);
+  border: none;
+  width: 100%;
+  text-align: left;
   border-radius: var(--shape-md);
-  background: color-mix(in srgb, var(--md-on-surface) 4%, transparent);
+  background: var(--md-surface-container);
+  color: var(--md-on-surface);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+/* spacing between blocks, and a gutter so nothing touches the window edge */
+.status-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-5) 0;
+}
+
+.status-row:hover {
+  background: var(--md-surface-container-high);
+}
+
+.status-row.static {
+  cursor: default;
+}
+
+.status-row.static:hover {
+  background: var(--md-surface-container);
 }
 
 .status-dot {

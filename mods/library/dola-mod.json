@@ -8,5 +8,6 @@
   "icon": "library",
   "settingsIcon": "settings",
   "entry": "index.js",
-  "backupFile": "library/library.json"
+  "backupFile": "library/library.json",
+  "backupLabel": "书库目录与阅读进度"
 }

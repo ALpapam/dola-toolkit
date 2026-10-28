@@ -61,6 +61,15 @@ interface AppState {
   railOrder: string[]
   /** installed mods, in rail order */
   mods: ModEntry[]
+  /**
+   * Order of the home page's shortcut page.
+   *
+   * Deliberately independent of `railOrder`: the desktop-like shortcut grid is its own
+   * layout, so rearranging the sidebar must not shuffle it.
+   */
+  homeOrder: string[]
+  /** which settings section to open when navigating from a status row */
+  settingsSection: string | null
   ready: boolean
   /** every font family the reader can use (bundled + imported) */
   fonts: LoadedFontInfo[]
@@ -71,6 +80,9 @@ interface AppState {
   setRailExpanded: (v: boolean) => void
   setRailOrder: (o: string[]) => void
   setMods: (m: ModEntry[]) => void
+  setHomeOrder: (o: string[]) => void
+  /** jump to 设置, optionally selecting a section */
+  openSettings: (section?: string) => void
   /** refresh from the main process */
   refreshMods: () => Promise<void>
   setReady: (v: boolean) => void
@@ -93,6 +105,18 @@ const readOrder = (): string[] => {
   return BUILTIN_TOOLS.map((t) => t.id)
 }
 
+/** Shortcut page order; empty means "use the natural order". */
+const readHomeOrder = (): string[] => {
+  try {
+    const raw = localStorage.getItem('dola.homeOrder')
+    if (!raw) return []
+    const arr = JSON.parse(raw) as unknown
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 const readExpanded = (): boolean => {
   try {
     return localStorage.getItem('dola.railExpanded') === '1'
@@ -106,6 +130,8 @@ export const useApp = create<AppState>((set) => ({
   settings: null,
   railExpanded: readExpanded(),
   railOrder: readOrder(),
+  homeOrder: readHomeOrder(),
+  settingsSection: null,
   mods: [],
   ready: false,
   fonts: [],
@@ -129,6 +155,15 @@ export const useApp = create<AppState>((set) => ({
     set({ railOrder })
   },
   setMods: (mods) => set({ mods }),
+  setHomeOrder: (homeOrder) => {
+    try {
+      localStorage.setItem('dola.homeOrder', JSON.stringify(homeOrder))
+    } catch {
+      /* ignore */
+    }
+    set({ homeOrder })
+  },
+  openSettings: (section) => set({ page: 'settings', settingsSection: section ?? null }),
   refreshMods: async () => {
     try {
       const mods = (await window.api.mods.list()) as ModEntry[]

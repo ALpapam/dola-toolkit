@@ -15,7 +15,8 @@
 | `icon` | | 侧边栏图标名（Material Symbols），默认 `extension` |
 | `settingsIcon` | | 设置页图标名，默认 `settings` |
 | `entry` | | 入口 bundle，默认 `index.js`。**扩展名必须是 `.js` 或 `.mjs`**（`dola-mod://` 只对这两个返回 `text/javascript`，`.cjs` 会被当成二进制而加载失败） |
-| `backupFile` | | 想参与 WebDAV 备份的数据文件，相对 `<userData>`（如 `library/library.json`）。声明后该工具会出现在「同步内容」弹窗里，远端名为 `dola-mod-<id>.json` |
+| `backupFile` | | 想参与 WebDAV 备份的数据文件，相对 `<userData>`（如 `library/library.json`）。声明后该工具会出现在「设置 → 同步内容」弹窗里，远端名为 `dola-mod-<id>.json` |
+| `backupLabel` | | 该备份内容的**中文说明**，直接显示在同步列表的「名称」列（如「书库目录与阅读进度」）。不写则显示「<name> 数据」。请写清楚里面到底是什么，用户需要知道什么数据会被上传 |
 
 清单可以嵌套最多两层文件夹（例如 zip 里先套一个 `library/` 目录）。
 

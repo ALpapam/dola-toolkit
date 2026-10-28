@@ -30,7 +30,13 @@ export function SettingsPage(): JSX.Element {
   const setSettings = useApp((s) => s.setSettings)
   const themeSet = useTheme((s) => s.setSettings)
   const refreshTheme = useTheme((s) => s.refresh)
-  const [section, setSection] = useState<Section>('appearance')
+  // a status row on the home page can request a specific section
+  const requestedSection = useApp((s) => s.settingsSection)
+  const [section, setSection] = useState<Section>((requestedSection as Section) ?? 'appearance')
+
+  useEffect(() => {
+    if (requestedSection) setSection(requestedSection as Section)
+  }, [requestedSection])
   const [saving, setSaving] = useState(false)
 
   const patch = async (p: SettingsPatch): Promise<void> => {
@@ -873,20 +879,18 @@ function SyncSection({ settings, patch }: { settings: Settings; patch: (p: Setti
               prefixIcon="folderData"
             />
           </div>
-          {/* 同步内容改为弹窗选择，可勾选设置 / 书库 / 各插件的数据 */}
-          <div>
-            <div className="tiny muted" style={{ marginBottom: 6 }}>
-              同步内容
-            </div>
+          {/*
+            同步内容是弹窗，按钮本身不放内容摘要 —— 插件多了按钮会撑变形。
+            自动同步的开关就放在按钮旁边，方便一起改。
+          */}
+          <div className="sync-actions">
             <Button variant="outlined" icon="cloudSync" onClick={() => setScopeOpen(true)}>
-              {syncScopeLabel(s.items)}
+              同步内容
             </Button>
-          </div>
-          <div className="hstack" style={{ alignItems: 'flex-end', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div className="tiny muted">自动同步</div>
+            <label className="sync-auto">
+              <span>自动同步</span>
               <Switch checked={s.autoSync} onChange={(v) => void patch({ sync: { autoSync: v } })} />
-            </div>
+            </label>
           </div>
         </div>
         <SyncScopeDialog

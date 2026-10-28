@@ -1573,3 +1573,115 @@ select.input {
 .tools-row .tools-row-icon {
   margin-left: -4px;
 }
+
+/* ------------------------------------------------------------------ */
+/* 同步内容：弹窗内的资源管理器式列表                                    */
+/* ------------------------------------------------------------------ */
+
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.sync-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+}
+
+.sync-head {
+  display: grid;
+  grid-template-columns: 24px 22px 150px 1fr;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-2) 6px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--md-on-surface-variant);
+  border-bottom: 1px solid color-mix(in srgb, var(--md-outline-variant) 40%, transparent);
+}
+
+.sync-head-detail {
+  padding-left: 2px;
+}
+
+.sync-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-top: 2px;
+}
+
+.sync-row {
+  display: grid;
+  grid-template-columns: 24px 22px 150px 1fr;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 9px var(--sp-2) 9px 0;
+  border: none;
+  border-radius: var(--shape-sm, 8px);
+  background: transparent;
+  color: var(--md-on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.sync-row:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 7%, transparent);
+}
+
+.sync-row.checked {
+  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+}
+
+/* the little checkbox square on the left of every row */
+.sync-check {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  border: 1.6px solid color-mix(in srgb, var(--md-on-surface) 45%, transparent);
+  background: transparent;
+  color: var(--md-on-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sync-row.checked .sync-check,
+.sync-head .sync-check[aria-checked='true'] {
+  border-color: var(--md-primary);
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+}
+
+.sync-row-icon {
+  display: grid;
+  place-items: center;
+  color: var(--md-on-surface-variant);
+}
+
+.sync-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-row-detail {
+  font-size: 11.5px;
+  color: var(--md-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

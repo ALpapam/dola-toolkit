@@ -24,6 +24,8 @@ interface StatusLine {
   label: string
   value: string
   tone: 'ok' | 'idle' | 'warn'
+  /** settings section this service belongs to; clicking the row opens it */
+  section?: string
 }
 
 /** mods can contribute rows to the status page */
@@ -39,7 +41,8 @@ declare global {
 export function HomePage(): JSX.Element {
   const setPage = useApp((s) => s.setPage)
   const mods = useApp((s) => s.mods)
-  const order = useApp((s) => s.railOrder)
+  const homeOrder = useApp((s) => s.homeOrder)
+  const openSettings = useApp((s) => s.openSettings)
 
   const [proxy, setProxy] = useState<ProxyState | null>(null)
   const [ai, setAi] = useState<AIStatus | null>(null)
@@ -99,19 +102,21 @@ export function HomePage(): JSX.Element {
   }, [])
 
   /**
-   * Shortcut page contents.
+   * Shortcut page contents, in their own order.
    *
-   * Same source order as the rail, reversed so the grid fills from the top-right —
-   * the way a desktop arranges icons.
+   * This grid has its own layout — rearranging the sidebar must not shuffle it — so it
+   * reads `homeOrder` and only falls back to built-ins followed by installed mods.
    */
   const shortcuts = (() => {
     const builtins = BUILTIN_TOOLS.map((t) => ({ id: t.id, name: t.name, icon: t.icon }))
     const modEntries = mods.filter((m) => m.enabled).map((m) => ({ id: m.id, name: m.name, icon: m.icon }))
     const all = [...builtins, ...modEntries]
     const byId = new Map(all.map((x) => [x.id, x]))
-    const ordered = order.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+    const ordered = homeOrder
+      .map((id) => byId.get(id))
+      .filter((x): x is NonNullable<typeof x> => Boolean(x))
     for (const entry of all) if (!ordered.some((x) => x.id === entry.id)) ordered.push(entry)
-    return ordered.reverse()
+    return ordered
   })()
 
   return (
@@ -174,14 +179,21 @@ export function HomePage(): JSX.Element {
         </header>
         <div className="status-list">
           {buildStatus(proxy, ai, sync, mods.length).map((row) => (
-            <div key={row.id} className="status-row">
+            <button
+              key={row.id}
+              type="button"
+              className="status-row"
+              onClick={() => openSettings(row.section)}
+              title={`打开${row.label}设置`}
+            >
               <span className={`status-dot ${row.tone}`} />
               <span className="status-label">{row.label}</span>
               <span className="status-value">{row.value}</span>
-            </div>
+              <Icon name="chevronRight" size={16} />
+            </button>
           ))}
           {modStatus.map((row) => (
-            <div key={row.id} className="status-row">
+            <div key={row.id} className="status-row static">
               <span className={`status-dot ${row.tone}`} />
               <span className="status-label">{row.label}</span>
               <span className="status-value">{row.value}</span>
@@ -215,31 +227,36 @@ function buildStatus(
       id: 'proxy',
       label: '代理服务',
       value: running ? `运行中 · ${engineLabel(running.engine)}` : '未启动',
-      tone: running ? 'ok' : 'idle'
+      tone: running ? 'ok' : 'idle',
+      section: 'proxy'
     },
     {
       id: 'nodes',
       label: '节点',
       value: proxy ? `${proxy.nodes?.length ?? 0} 个` : '—',
-      tone: proxy ? 'ok' : 'idle'
+      tone: proxy ? 'ok' : 'idle',
+      section: 'proxy'
     },
     {
       id: 'ai',
       label: 'AI 助手',
       value: ai?.configured ? `已配置${ai.model ? ` · ${ai.model}` : ''}` : '未配置',
-      tone: ai?.configured ? 'ok' : 'idle'
+      tone: ai?.configured ? 'ok' : 'idle',
+      section: 'ai'
     },
     {
       id: 'sync',
       label: 'WebDAV 同步',
       value: sync?.configured ? '已配置' : '未配置',
-      tone: sync?.configured ? 'ok' : 'idle'
+      tone: sync?.configured ? 'ok' : 'idle',
+      section: 'sync'
     },
     {
       id: 'mods',
       label: '工具数量',
       value: `${modCount + BUILTIN_TOOLS.length} 个（含内置 ${BUILTIN_TOOLS.length}）`,
-      tone: 'ok'
+      tone: 'ok',
+      section: 'tools'
     }
   ]
 }
