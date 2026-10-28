@@ -34,6 +34,7 @@ import { httpsGet } from './net'
 import { APP_VERSION } from '@shared/version'
 import type { AppUpdateInfo, CoreUpdateInfo, CoreId, DownloadChannel } from '@shared/types'
 import { getSettings } from './store'
+import { logUpdate } from './updateLog'
 import { proxyManager } from './proxy/manager'
 import { coreRoots, findCore, invalidateCoreVersion, runCoreVersion } from './proxy/binary'
 
@@ -422,6 +423,53 @@ export async function downloadAppUpdate(onProgress: (percent: number) => void): 
  * nothing anywhere said why. Anything that is not plausibly a full installer is
  * rejected here with an actionable message.
  */
+/**
+ * Launches the installer with elevation and reports whether it really started.
+ *
+ * This is the part that kept silently failing. `shell.openPath` cannot tell us if the
+ * user dismissed UAC, and `spawn()` cannot elevate at all — CreateProcess refuses an
+ * exe whose manifest asks for administrator with ERROR_ELEVATION_REQUIRED, and the
+ * error was swallowed while the app quit anyway. That is why "安装并重启" closed the
+ * window and nothing else happened.
+ *
+ * PowerShell is invoked by absolute path (a bare `powershell.exe` fails with ENOENT
+ * when the main process PATH has no System32) and its exit code is the signal:
+ * `Start-Process -Verb RunAs` returns non-zero when the UAC prompt is declined.
+ */
+function launchInstallerElevated(installerPath: string): Promise<void> {
+  const powershell = join(
+    process.env['SystemRoot'] || 'C:\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  )
+  const script = `Start-Process -FilePath '${installerPath.replace(/'/g, "''")}' -Verb RunAs`
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      stdio: 'ignore'
+    })
+    child.on('error', (e) => {
+      if (settled) return
+      settled = true
+      reject(new Error(`无法启动安装程序：${e.message}`))
+    })
+    child.on('exit', (code) => {
+      if (settled) return
+      settled = true
+      if (code === 0) resolve()
+      else reject(new Error('安装程序未启动（多半是取消了管理员授权），请重试'))
+    })
+    setTimeout(() => {
+      if (settled) return
+      settled = true
+      resolve()
+    }, 20000).unref?.()
+  })
+}
+
 export async function installAppUpdate(installerPath: string, targetVersion?: string): Promise<void> {
   if (!existsSync(installerPath)) throw new Error('安装包不存在，请重新下载')
 
@@ -447,6 +495,21 @@ export async function installAppUpdate(installerPath: string, targetVersion?: st
     throw new Error('下载的文件不是有效的安装程序，已删除。请重新下载更新')
   }
 
+  /*
+   * Launch FIRST, mark second, quit last.
+   *
+   * The marker drives the "did the update land?" check on the next start, so writing
+   * it before a launch that then fails produced a bogus「更新未生效」report. And
+   * quitting unconditionally turned a failed launch into "the window just closed".
+   */
+  try {
+    await launchInstallerElevated(installerPath)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : '无法启动安装程序'
+    logUpdate('app.install.launch-fail', message)
+    throw new Error(message)
+  }
+
   try {
     writeFileSync(
       join(app.getPath('userData'), 'update-pending.json'),
@@ -461,16 +524,10 @@ export async function installAppUpdate(installerPath: string, targetVersion?: st
   } catch {
     /* non-fatal: only used to confirm the update on the next start */
   }
+  logUpdate('app.install.launched', `${installerPath} → ${targetVersion ?? '?'}`)
 
-  const failure = await shell.openPath(installerPath)
-  if (failure) {
-    // openPath returns a message instead of throwing; try a detached spawn too
-    const child = spawn(installerPath, [], { detached: true, stdio: 'ignore' })
-    child.unref()
-  }
-
-  // give the installer a moment to start before this process exits
-  setTimeout(() => app.quit(), 1200)
+  // the installer needs this process gone to replace its files
+  setTimeout(() => app.quit(), 1500)
 }
 
 // ---------------------------------------------------------------------------
