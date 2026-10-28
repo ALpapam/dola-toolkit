@@ -1,0 +1,11 @@
+{
+  "id": "proxy",
+  "name": "代理",
+  "version": "1.0.0",
+  "settingsName": "代理设置",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "description": "Xray / sing-box / Mihomo 多内核代理，支持导入订阅、节点测速、分流规则与内核更新。\n\n在「代理设置」里可以切换默认内核、路由模式与系统代理。",
+  "icon": "proxy",
+  "settingsIcon": "tune",
+  "entry": "index.js"
+}

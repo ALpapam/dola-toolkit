@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CoreId, EngineCapability, NodeDraft, NodeProtocol, ProxyNode, TransportKind } from '@shared/types'
-import { Button, Dialog, Field, IconButton, Select, Switch, TextInput } from '../../ui/controls'
-import { Icon } from '../../ui/Icon'
-import { toast } from '../../ui/toast'
-import { engineLabel } from '../../ui/format'
+import { Button, Dialog, Field, IconButton, Select, Switch, TextInput } from './host'
+import { Icon } from './host'
+import { toast } from './host'
+import { engineLabel } from './host'
 
 interface Props {
   open: boolean

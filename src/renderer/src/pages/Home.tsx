@@ -197,6 +197,7 @@ export function HomePage(): JSX.Element {
         modCount={mods.length}
         extra={modStatus}
         onOpenSettings={openSettings}
+        onOpenPage={setPage}
         onTop={() => goTo(0)}
       />
     </div>
@@ -407,10 +408,20 @@ interface StatusPageProps {
   modCount: number
   extra: StatusLine[]
   onOpenSettings: (section?: string) => void
+  onOpenPage: (page: string) => void
   onTop: () => void
 }
 
-function StatusPage({ proxy, ai, sync, modCount, extra, onOpenSettings, onTop }: StatusPageProps): JSX.Element {
+function StatusPage({
+  proxy,
+  ai,
+  sync,
+  modCount,
+  extra,
+  onOpenSettings,
+  onOpenPage,
+  onTop
+}: StatusPageProps): JSX.Element {
   return (
     <section className="home-page home-status">
       <header className="home-page-head">
@@ -423,7 +434,12 @@ function StatusPage({ proxy, ai, sync, modCount, extra, onOpenSettings, onTop }:
             key={row.id}
             type="button"
             className="status-row"
-            onClick={() => onOpenSettings(row.section)}
+            onClick={() => {
+              const target = row.section
+              // a tool's settings is a page of its own; app settings need the section
+              if (target?.startsWith('mod-settings:')) onOpenPage(target)
+              else onOpenSettings(target)
+            }}
             title={`打开${row.label}设置`}
           >
             <span className={`status-dot ${row.tone}`} />
@@ -456,14 +472,14 @@ function buildStatus(proxy: ProxyState | null, ai: AiState, sync: SyncState, mod
       label: '代理服务',
       value: running ? `运行中 · ${engineLabel(running.engine)}` : '未启动',
       tone: running ? 'ok' : 'idle',
-      section: 'proxy'
+      section: 'mod-settings:proxy'
     },
     {
       id: 'nodes',
       label: '节点',
       value: proxy ? `${proxy.nodes?.length ?? 0} 个` : '—',
       tone: proxy ? 'ok' : 'idle',
-      section: 'proxy'
+      section: 'mod-settings:proxy'
     },
     {
       id: 'ai',

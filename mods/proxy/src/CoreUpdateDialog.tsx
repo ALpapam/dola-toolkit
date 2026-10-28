@@ -11,9 +11,9 @@
 
 import { useEffect, useState } from 'react'
 import type { CoreUpdateInfo, StagedCoreInfo } from '@shared/types'
-import { Button, Dialog, Spinner } from '../../ui/controls'
-import { Icon } from '../../ui/Icon'
-import { toast } from '../../ui/toast'
+import { Button, Dialog, Spinner } from './host'
+import { Icon } from './host'
+import { toast } from './host'
 
 interface Props {
   open: boolean

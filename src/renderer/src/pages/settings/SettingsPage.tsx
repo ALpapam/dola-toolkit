@@ -13,13 +13,12 @@ import { THEME_PRESETS, presetById } from '@shared/presets'
 import { DEFAULT_READER_FONT_FAMILY, DEFAULT_READER_FONT_ID, SYSTEM_READING_STACK } from '@shared/fonts'
 import { applyAppFont, installFontFaces, resolveReadingFamily } from '../../lib/fonts'
 
-type Section = 'appearance' | 'ai' | 'sync' | 'proxy' | 'tools' | 'general' | 'about'
+type Section = 'appearance' | 'ai' | 'sync' | 'tools' | 'general' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'appearance', label: '外观与取色', icon: 'palette' },
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
-  { id: 'proxy', label: '代理', icon: 'proxy' },
   { id: 'tools', label: '工具', icon: 'apps' },
   { id: 'general', label: '通用', icon: 'tune' },
   { id: 'about', label: '关于', icon: 'info' }
@@ -96,7 +95,6 @@ export function SettingsPage(): JSX.Element {
           {section === 'appearance' && <AppearanceSection settings={settings} patch={patch} />}
           {section === 'ai' && <AiSection settings={settings} patch={patch} />}
           {section === 'sync' && <SyncSection settings={settings} patch={patch} />}
-          {section === 'proxy' && <ProxySection settings={settings} patch={patch} />}
           {section === 'tools' && <ToolsSection />}
           {section === 'general' && <GeneralSection settings={settings} patch={patch} />}
           {section === 'about' && <AboutSection />}
@@ -930,80 +928,6 @@ function SyncSection({ settings, patch }: { settings: Settings; patch: (p: Setti
             </div>
           </div>
         ) : null}
-      </div>
-    </>
-  )
-}
-
-/* ================================================================== */
-/* Proxy                                                               */
-/* ================================================================== */
-function ProxySection({ settings, patch }: { settings: Settings; patch: (p: SettingsPatch) => Promise<void> }): JSX.Element {
-  const p = settings.proxy
-  return (
-    <>
-      <h2 className="set-section-title">
-        <Icon name="proxy" size={20} /> 代理
-      </h2>
-      <p className="set-section-desc">这里配置的是所有节点共享的内核参数。</p>
-      <div className="set-card">
-        <div className="set-grid" style={{ paddingTop: 16 }}>
-          <TextInput
-            label="混合端口 (HTTP/SOCKS)"
-            type="number"
-            value={String(p.mixedPort)}
-            onChange={(e) => void patch({ proxy: { mixedPort: Number(e.target.value) } })}
-            prefixIcon="lan"
-          />
-          <Select
-            label="默认内核"
-            value={p.defaultEngine}
-            onChange={(v) => void patch({ proxy: { defaultEngine: v as typeof p.defaultEngine } })}
-            options={[
-              { value: 'xray', label: 'Xray' },
-              { value: 'mihomo', label: 'Mihomo' },
-              { value: 'singbox', label: 'Sing-box' }
-            ]}
-          />
-          <Select
-            label="日志等级"
-            value={p.logLevel}
-            onChange={(v) => void patch({ proxy: { logLevel: v as typeof p.logLevel } })}
-            options={[
-              { value: 'error', label: 'error' },
-              { value: 'warn', label: 'warn' },
-              { value: 'info', label: 'info' },
-              { value: 'debug', label: 'debug' }
-            ]}
-          />
-          <div />
-          <div className="full">
-            <TextInput
-              label="系统代理绕过列表"
-              value={p.bypass}
-              onChange={(e) => void patch({ proxy: { bypass: e.target.value } })}
-              hint="使用分号分隔"
-            />
-          </div>
-        </div>
-        <SettingRow title="允许局域网连接" desc="其他设备可通过本机端口使用代理">
-          <Switch checked={p.allowLan} onChange={(v) => void patch({ proxy: { allowLan: v } })} />
-        </SettingRow>
-        <SettingRow title="接管系统代理" desc="启动时写入 Windows 系统代理，停止时恢复">
-          <Switch checked={p.systemProxy} onChange={(v) => void patch({ proxy: { systemProxy: v } })} />
-        </SettingRow>
-        <SettingRow title="启动时自动连接" desc="打开 Dola Toolkit 后自动启用代理">
-          <Switch checked={p.autoStart} onChange={(v) => void patch({ proxy: { autoStart: v } })} />
-        </SettingRow>
-        <SettingRow title="流量嗅探" desc="识别域名，改善分流准确性">
-          <Switch checked={p.sniffing} onChange={(v) => void patch({ proxy: { sniffing: v } })} />
-        </SettingRow>
-        <SettingRow title="启用 IPv6" desc="关闭可避免部分网络异常">
-          <Switch checked={p.ipv6} onChange={(v) => void patch({ proxy: { ipv6: v } })} />
-        </SettingRow>
-        <SettingRow title="异常自动重启" desc="内核意外退出时最多重试 3 次">
-          <Switch checked={p.autoRestart} onChange={(v) => void patch({ proxy: { autoRestart: v } })} />
-        </SettingRow>
       </div>
     </>
   )

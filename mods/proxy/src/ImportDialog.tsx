@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Button, Dialog, TextArea } from '../../ui/controls'
-import { toast } from '../../ui/toast'
+import { Button, Dialog, TextArea } from './host'
+import { toast } from './host'
 
 export function ImportDialog({
   open,

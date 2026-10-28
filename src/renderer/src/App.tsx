@@ -3,7 +3,6 @@ import { APP_VERSION_LABEL } from '@shared/version'
 import { useApp } from './state/app'
 import { Icon } from './ui/Icon'
 import { HomePage } from './pages/Home'
-import { ProxyPage } from './pages/proxy/ProxyPage'
 import { AddToolPage } from './pages/AddToolPage'
 import { ModSettingsPage } from './pages/ModSettingsPage'
 import { ModHost } from './modHost/ModHost'
@@ -117,14 +116,13 @@ export default function App(): JSX.Element {
         <TitleBar />
         <div className="page-host">
           {page === 'home' && <HomePage />}
-          {page === 'proxy' && <ProxyPage />}
           {page === 'add-tool' && <AddToolPage />}
           {page === 'settings' && <SettingsPage />}
           {settingsModId && <ModSettingsPage modId={settingsModId} />}
           {mod && <ModHost mod={mod} />}
           {!mod &&
             !settingsModId &&
-            !['home', 'proxy', 'add-tool', 'settings'].includes(page) && <HomePage />}
+            !['home', 'add-tool', 'settings'].includes(page) && <HomePage />}
         </div>
       </div>
       <ToastHost />

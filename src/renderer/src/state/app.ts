@@ -11,15 +11,14 @@ export interface ToolDef {
   builtin: boolean
 }
 
-export const BUILTIN_TOOLS: ToolDef[] = [
-  {
-    id: 'proxy',
-    name: '代理',
-    icon: 'proxy',
-    desc: '自建节点 · Xray / Mihomo / Sing-box 内核',
-    builtin: true
-  },
-]
+/**
+ * Tools that ship inside the shell.
+ *
+ * Everything else — 代理 and 书库 included — is a mod loaded from a .zip, so this list is
+ * deliberately empty: the rail, the shortcut grid and the settings page all merge
+ * BUILTIN_TOOLS with the installed mods.
+ */
+export const BUILTIN_TOOLS: ToolDef[] = []
 
 /**
  * Installed mods, mirrored from the main process.

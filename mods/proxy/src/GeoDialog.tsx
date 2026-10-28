@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import type { ProxyState } from '@shared/types'
-import { Button, Dialog, Spinner } from '../../ui/controls'
-import { Icon } from '../../ui/Icon'
-import { toast } from '../../ui/toast'
-import { fmtBytes, fmtDate } from '../../ui/format'
+import { Button, Dialog, Spinner } from './host'
+import { Icon } from './host'
+import { toast } from './host'
+import { fmtBytes, fmtDate } from './host'
 
 export function GeoDialog({
   open,
