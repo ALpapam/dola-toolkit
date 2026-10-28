@@ -4,11 +4,15 @@
 // One list holds built-in tools and installed mods. The "+" entry sits after every
 // tool, and Settings stays pinned in the footer.
 //
-// Reordering is pointer-driven rather than HTML5 drag-and-drop. The old version
-// reordered on `dragover` and let the browser re-lay-out the list, which is why the
-// movement looked abrupt — every change snapped. Here the DOM order stays fixed while
-// dragging: each tile is offset with a transform that animates, and the dragged tile
-// follows the pointer. The new order is committed once, on release.
+// Reordering is pointer-driven, not HTML5 drag-and-drop, and the geometry is computed
+// from ABSOLUTE positions rather than accumulated deltas.
+//
+// Why: the previous version tracked `clientY - startY` and re-subscribed its window
+// listeners whenever React re-rendered (the callbacks closed over state). The first
+// move could therefore run against a stale start position and offset the tile by
+// hundreds of pixels — the "icon jumps up, then snaps back" report. Everything below
+// reads from refs, so the handlers never go stale, and each frame recomputes the
+// offset from the tile's own starting position.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -26,6 +30,20 @@ interface RailEntry {
   mod: boolean
 }
 
+/** Everything a drag needs, kept in one ref so handlers stay stable. */
+interface DragSession {
+  id: string
+  /** pointer offset inside the tile when the drag began */
+  grabOffset: number
+  /** the tile's untransformed top, in list coordinates */
+  startTop: number
+  /** distance between two tile tops */
+  pitch: number
+  /** ids in their rendered order at drag start */
+  ids: string[]
+  moved: boolean
+}
+
 export function NavRail(): JSX.Element {
   const railExpanded = useApp((s) => s.railExpanded)
   const setRailExpanded = useApp((s) => s.setRailExpanded)
@@ -36,16 +54,11 @@ export function NavRail(): JSX.Element {
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const itemRefs = useRef(new Map<string, HTMLButtonElement>())
-  /** distance between two tile tops, measured when a drag starts */
-  const pitchRef = useRef(56)
+  const session = useRef<DragSession | null>(null)
 
   const [dragId, setDragId] = useState<string | null>(null)
-  /** pointer travel since dragstart, in px */
   const [dragDelta, setDragDelta] = useState(0)
-  /** slot the dragged tile would occupy if released now */
   const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const dragStart = useRef(0)
-  const moved = useRef(false)
 
   const entries = useMemo<RailEntry[]>(() => {
     const builtins: RailEntry[] = BUILTIN_TOOLS.map((t) => ({
@@ -74,42 +87,63 @@ export function NavRail(): JSX.Element {
     return ordered
   }, [mods, order])
 
-  /** Commit the pending order once the pointer is released. */
-  const stopDrag = useCallback(
+  /** Ends the drag; `commit` applies the pending slot to the stored order. */
+  const endDrag = useCallback(
     (commit: boolean): void => {
-      if (commit && dragId && dragIndex !== null) {
-        const ids = entries.map((e) => e.id)
-        const from = ids.indexOf(dragId)
-        if (from >= 0 && dragIndex !== from) {
-          const next = ids.filter((id) => id !== dragId)
-          next.splice(dragIndex, 0, dragId)
-          setOrder(next)
+      const drag = session.current
+      session.current = null
+      if (commit && drag) {
+        const target = dragIndexRef.current
+        if (target !== null) {
+          const ids = drag.ids
+          const from = ids.indexOf(drag.id)
+          if (from >= 0 && target !== from) {
+            const next = ids.filter((id) => id !== drag.id)
+            next.splice(target, 0, drag.id)
+            setOrder(next)
+          }
         }
       }
       setDragId(null)
       setDragIndex(null)
       setDragDelta(0)
-      moved.current = false
     },
-    [dragId, dragIndex, entries, setOrder]
+    [setOrder]
   )
 
-  /* pointer moves outside the rail must still finish the drag */
+  /* dragIndex is read inside endDrag, which must stay referentially stable */
+  const dragIndexRef = useRef<number | null>(null)
+  useEffect(() => {
+    dragIndexRef.current = dragIndex
+  }, [dragIndex])
+
+  /*
+   * One subscription per drag. Dependencies are only `dragId`, and every value the
+   * handlers need comes from the refs — so no handler can ever run against a stale
+   * closure.
+   */
   useEffect(() => {
     if (!dragId) return
     const onMove = (e: PointerEvent): void => {
-      const delta = e.clientY - dragStart.current
-      setDragDelta(delta)
-      if (Math.abs(delta) > 4) moved.current = true
+      const drag = session.current
+      const list = listRef.current
+      if (!drag || !list) return
 
-      const pitch = pitchRef.current
-      const from = entries.findIndex((x) => x.id === dragId)
+      // absolute pointer → how far the tile wants to travel from where it started
+      const listTop = list.getBoundingClientRect().top + list.scrollTop
+      const desiredTop = e.clientY - listTop - drag.grabOffset
+      const offset = desiredTop - drag.startTop
+      if (Math.abs(offset) > 3) drag.moved = true
+      setDragDelta(offset)
+
+      const from = drag.ids.indexOf(drag.id)
       if (from < 0) return
-      // the tile's own centre, in list coordinates
-      const target = Math.round(from + delta / pitch)
-      setDragIndex(Math.max(0, Math.min(entries.length - 1, target)))
+      // the slot whose centre the tile now overlaps
+      const target = Math.round(from + offset / drag.pitch)
+      const clamped = Math.max(0, Math.min(drag.ids.length - 1, target))
+      setDragIndex((prev) => (prev === clamped ? prev : clamped))
     }
-    const onUp = (): void => stopDrag(true)
+    const onUp = (): void => endDrag(true)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
@@ -118,18 +152,31 @@ export function NavRail(): JSX.Element {
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
     }
-  }, [dragId, entries, stopDrag])
+  }, [dragId, endDrag])
 
   const beginDrag = (id: string) => (e: React.PointerEvent): void => {
     // only the primary button starts a reorder
     if (e.button !== 0) return
+    const el = itemRefs.current.get(id)
     const list = listRef.current
-    if (list) {
-      const tops = [...itemRefs.current.values()].map((el) => el.offsetTop).sort((a, b) => a - b)
-      if (tops.length > 1) pitchRef.current = tops[1] - tops[0] || 56
+    if (!el || !list) return
+
+    const listTop = list.getBoundingClientRect().top + list.scrollTop
+    const tileTop = el.getBoundingClientRect().top + list.scrollTop - listTop
+    // measure the gap from the tiles themselves: the list can scroll or resize
+    const tops = [...itemRefs.current.values()]
+      .map((node) => node.getBoundingClientRect().top + list.scrollTop - listTop)
+      .sort((a, b) => a - b)
+    const pitch = tops.length > 1 ? tops[1] - tops[0] : el.offsetHeight + 4
+
+    session.current = {
+      id,
+      grabOffset: e.clientY - (listTop - list.scrollTop) - tileTop,
+      startTop: tileTop,
+      pitch: pitch > 8 ? pitch : el.offsetHeight + 4,
+      ids: entries.map((x) => x.id),
+      moved: false
     }
-    dragStart.current = e.clientY
-    moved.current = false
     setDragId(id)
     setDragIndex(entries.findIndex((x) => x.id === id))
     setDragDelta(0)
@@ -137,7 +184,7 @@ export function NavRail(): JSX.Element {
 
   const openPage = (id: string): void => {
     // a drag that ends on the tile must not also navigate
-    if (moved.current) return
+    if (session.current?.moved) return
     useApp.getState().setPage(id)
   }
 
@@ -173,9 +220,9 @@ export function NavRail(): JSX.Element {
             else if (from > index && dragIndex <= index) shift = 1
           }
           const transform = isDragged
-            ? `translateY(${dragDelta}px)`
+            ? `translate3d(0, ${dragDelta}px, 0)`
             : shift !== 0
-              ? `translateY(${shift * pitchRef.current}px)`
+              ? `translate3d(0, ${shift * (session.current?.pitch ?? 56)}px, 0)`
               : undefined
 
           return (
@@ -198,7 +245,6 @@ export function NavRail(): JSX.Element {
                 .join(' ')}
               style={{
                 transform,
-                // the dragged tile must render above the ones sliding under it
                 zIndex: isDragged ? 3 : undefined,
                 transition: isDragged ? 'none' : undefined
               }}

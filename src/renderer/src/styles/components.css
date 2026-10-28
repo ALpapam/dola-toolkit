@@ -1432,6 +1432,17 @@ select.input {
   padding: 14px 0;
 }
 
+/* the button must never shrink: it used to lose its icon and the last glyph */
+.tools-format > .btn,
+.tools-format > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.tools-format > div:first-child {
+  min-width: 0;
+}
+
 .tools-format-title {
   font-weight: 600;
   font-size: 14px;
@@ -1604,6 +1615,11 @@ select.input {
   font-weight: 600;
   color: var(--md-on-surface-variant);
   border-bottom: 1px solid color-mix(in srgb, var(--md-outline-variant) 40%, transparent);
+}
+
+.sync-head > span:first-of-type {
+  /* spans the icon + name columns: the header has no icon of its own */
+  grid-column: 2 / 4;
 }
 
 .sync-head-detail {
