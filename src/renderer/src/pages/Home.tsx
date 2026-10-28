@@ -244,7 +244,11 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
   const dragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null)
 
   const [dragId, setDragId] = useState<string | null>(null)
-  const [delta, setDelta] = useState({ dx: 0, dy: 0 })
+  /** pointer position and grab offset, so the dragged tile can be re-anchored each frame */
+  const pointerRef = useRef({ x: 0, y: 0 })
+  const grabRef = useRef({ dx: 0, dy: 0 })
+  // a counter used only to force a render on each pointer move
+  const [, setTick] = useState(0)
   /** set after a drag that moved: the click Chromium fires next must not open the tool */
   const suppressClick = useRef(false)
 
@@ -271,6 +275,30 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
         el.style.transform = ''
       })
     }
+  })
+
+  /*
+   * Keep the dragged tile under the cursor.
+   *
+   * A fixed `translate(dx, dy)` measured from drag start drifts: reordering changes the
+   * tile's LAYOUT slot, so the same offset is applied on top of a moving base and the
+   * icon escapes the pointer further with every swap. Here the transform is recomputed
+   * from the tile's current layout box on every frame, which is self-correcting.
+   */
+  useLayoutEffect(() => {
+    if (!dragId) return
+    const el = tileRefs.current.get(dragId)
+    if (!el) return
+    const p = pointerRef.current
+    const g = grabRef.current
+    // read the untransformed box, then place it under the pointer
+    el.style.transform = 'none'
+    const box = el.getBoundingClientRect()
+    const dx = p.x - g.dx - box.left
+    const dy = p.y - g.dy - box.top
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.06)`
+    el.style.transition = 'none'
+    el.style.zIndex = '3'
   })
 
   const snapshot = (skipId: string | null): void => {
@@ -324,7 +352,6 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
       }, 350)
     }
     setDragId(null)
-    setDelta({ dx: 0, dy: 0 })
   }
 
   useEffect(() => {
@@ -333,7 +360,8 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
       const drag = dragRef.current
       if (!drag) return
       drag.moved = true
-      setDelta({ dx: e.clientX - drag.startX, dy: e.clientY - drag.startY })
+      pointerRef.current = { x: e.clientX, y: e.clientY }
+      setTick((n) => n + 1)
 
       const target = slotAt(e.clientX, e.clientY)
       if (target === null) return
@@ -360,8 +388,13 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
   const beginDrag = (id: string) => (e: React.PointerEvent): void => {
     if (e.button !== 0) return
     suppressClick.current = false
+    const el = tileRefs.current.get(id)
+    if (el) {
+      const box = el.getBoundingClientRect()
+      grabRef.current = { dx: e.clientX - box.left, dy: e.clientY - box.top }
+    }
+    pointerRef.current = { x: e.clientX, y: e.clientY }
     dragRef.current = { id, startX: e.clientX, startY: e.clientY, moved: false }
-    setDelta({ dx: 0, dy: 0 })
     setDragId(id)
   }
 
@@ -383,15 +416,7 @@ function ShortcutPage({ shortcuts, onOpen, onAdd, onReorder, onNext }: ShortcutP
                 else tileRefs.current.delete(s.id)
               }}
               className={`shortcut ${isDragged ? 'dragging' : ''}`}
-              style={
-                isDragged
-                  ? {
-                      transform: `translate3d(${delta.dx}px, ${delta.dy}px, 0) scale(1.06)`,
-                      transition: 'none',
-                      zIndex: 3
-                    }
-                  : undefined
-              }
+              style={isDragged ? { zIndex: 3 } : undefined}
               onPointerDown={beginDrag(s.id)}
               onClick={() => {
                 // pointerup clears dragRef before this fires, so consult the flag

@@ -15,7 +15,7 @@
 // offset from the tile's own starting position.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useApp, BUILTIN_TOOLS } from '../state/app'
 import { Icon, type IconName } from '../ui/Icon'
 import { APP_VERSION_LABEL, APP_NAME } from '@shared/version'
@@ -64,6 +64,8 @@ export function NavRail(): JSX.Element {
    * the same tile) opened the tool while dragging down did not.
    */
   const suppressClick = useRef(false)
+  /** rect of the dragged tile at release, used to animate it into its final slot */
+  const settle = useRef<{ id: string; rect: DOMRect } | null>(null)
 
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragDelta, setDragDelta] = useState(0)
@@ -101,6 +103,12 @@ export function NavRail(): JSX.Element {
     (commit: boolean): void => {
       const drag = session.current
       session.current = null
+      if (drag?.moved) {
+        const el = itemRefs.current.get(drag.id)
+        // remember where the tile visually is, so the commit can glide it into place
+        // instead of teleporting to its new slot
+        if (el) settle.current = { id: drag.id, rect: el.getBoundingClientRect() }
+      }
       // a moved drag must swallow the click that follows
       suppressClick.current = Boolean(drag?.moved)
       if (drag?.moved) {
@@ -169,6 +177,32 @@ export function NavRail(): JSX.Element {
       window.removeEventListener('pointercancel', onUp)
     }
   }, [dragId, endDrag])
+
+  /*
+   * Settle animation.
+   *
+   * On release the list re-renders in its new order, so the dragged tile's layout
+   * position jumps by up to half a slot while its inline transform is dropped in the
+   * same frame — that is the "jumps up after dropping" report. Here the tile is put
+   * back where it visually was and released into its slot over 180ms.
+   */
+  useLayoutEffect(() => {
+    const pending = settle.current
+    if (!pending) return
+    settle.current = null
+    const el = itemRefs.current.get(pending.id)
+    if (!el) return
+    const now = el.getBoundingClientRect()
+    const dx = pending.rect.left - now.left
+    const dy = pending.rect.top - now.top
+    if (!dx && !dy) return
+    el.style.transition = 'none'
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 180ms cubic-bezier(0.2, 0, 0, 1)'
+      el.style.transform = ''
+    })
+  })
 
   const beginDrag = (id: string) => (e: React.PointerEvent): void => {
     // only the primary button starts a reorder
