@@ -20,7 +20,7 @@ const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
   { id: 'proxy', label: '代理', icon: 'proxy' },
-  { id: 'tools', label: '工具', icon: 'extension' },
+  { id: 'tools', label: '工具', icon: 'apps' },
   { id: 'general', label: '通用', icon: 'tune' },
   { id: 'about', label: '关于', icon: 'info' }
 ]

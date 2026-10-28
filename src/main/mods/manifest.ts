@@ -83,7 +83,7 @@ export function parseManifest(raw: string, dir: string): ModInfo {
   }
 
   const version = asString(data.version, 'version')
-  if (!/^\d+(\.\d+)*/.test(version)) {
+  if (!/^\d+(\.\d+)*(-[0-9A-Za-z.]+)?$/.test(version)) {
     throw new ModFormatError('插件 version 必须是形如 1.0.0 的版本号')
   }
 
@@ -96,8 +96,10 @@ export function parseManifest(raw: string, dir: string): ModInfo {
     settingsName: asString(data.settingsName, 'settingsName', false) || `${asString(data.name, 'name')}设置`,
     createdAt: asString(data.createdAt, 'createdAt', false) || new Date().toISOString(),
     description: asString(data.description, 'description', false),
-    icon: asString(data.icon, 'icon', false) || 'extension',
-    settingsIcon: asString(data.settingsIcon, 'settingsIcon', false) || 'settings',
+    // `extension` is not one of the bundled material symbols — a mod omitting icon
+    // would silently render the fallback `info` glyph. `apps` exists.
+    icon: asString(data.icon, 'icon', false) || 'apps',
+    settingsIcon: asString(data.settingsIcon, 'settingsIcon', false) || 'tune',
     entry,
     backupFile: asString(data.backupFile, 'backupFile', false),
     dir

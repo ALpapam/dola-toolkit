@@ -41,7 +41,7 @@ export function useSyncItems(): SyncItem[] {
       id: `mod:${m.id}`,
       label: `${m.name} 数据`,
       desc: m.backupFile,
-      icon: (m.icon || 'extension') as IconName
+      icon: (m.icon || 'apps') as IconName
     })
   }
   return items

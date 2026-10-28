@@ -106,7 +106,7 @@ export function ToolsSection(): JSX.Element {
   return (
     <>
       <h2 className="set-section-title">
-        <Icon name="extension" size={20} /> 工具与插件
+        <Icon name="apps" size={20} /> 工具与插件
       </h2>
       <p className="set-section-desc">
         拖动手柄可以调整工具顺序（侧边栏同步变化）。工具以 .zip 插件包安装，把包拖到「添加工具」
