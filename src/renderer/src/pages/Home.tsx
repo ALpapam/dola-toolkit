@@ -1,129 +1,245 @@
-import { useEffect, useState } from 'react'
-import type { AIStatus, AppInfo, ProxyState, SyncStatus } from '@shared/types'
+// ---------------------------------------------------------------------------
+// 主菜单
+//
+// Three full-height pages stacked vertically with scroll snapping:
+//
+//   1  welcome   logo, greeting, and a small down chevron
+//   2  shortcuts installed tools as desktop-style icons (top-right first),
+//                clicking one opens that tool
+//   3  status    what the app is currently providing; mods can add rows through
+//                window.__DOLA_STATUS__
+//
+// The chevron on page 1 moves to page 2, page 2 has its own chevron down to page 3.
+// ---------------------------------------------------------------------------
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AIStatus, ProxyState, SyncStatus } from '@shared/types'
 import { useApp, BUILTIN_TOOLS } from '../state/app'
-import { APP_VERSION_LABEL } from '@shared/version'
-import { useTheme } from '../theme/store'
 import { Icon, type IconName } from '../ui/Icon'
-import { Badge, Empty } from '../ui/controls'
 import { engineLabel } from '../ui/format'
+import logoUrl from '../assets/logo-64.png'
+
+interface StatusLine {
+  id: string
+  label: string
+  value: string
+  tone: 'ok' | 'idle' | 'warn'
+}
+
+/** mods can contribute rows to the status page */
+declare global {
+  interface Window {
+    __DOLA_STATUS__?: Record<
+      string,
+      { title: string; resolve: () => Promise<StatusLine[]> | StatusLine[] }
+    >
+  }
+}
 
 export function HomePage(): JSX.Element {
   const setPage = useApp((s) => s.setPage)
-  const monet = useTheme((s) => s.monet)
-  const [info, setInfo] = useState<AppInfo | null>(null)
+  const mods = useApp((s) => s.mods)
+  const order = useApp((s) => s.railOrder)
+
   const [proxy, setProxy] = useState<ProxyState | null>(null)
   const [ai, setAi] = useState<AIStatus | null>(null)
   const [sync, setSync] = useState<SyncStatus | null>(null)
+  const [modStatus, setModStatus] = useState<StatusLine[]>([])
+
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const [pageIndex, setPageIndex] = useState(0)
 
   useEffect(() => {
-    void window.api.app.info().then(setInfo).catch(() => undefined)
     const load = (): void => {
       void window.api.proxy.state().then(setProxy).catch(() => undefined)
       void window.api.ai.status().then(setAi).catch(() => undefined)
       void window.api.sync.status().then(setSync).catch(() => undefined)
     }
     load()
-    const t = setInterval(load, 4000)
+    const t = setInterval(load, 5000)
     return () => clearInterval(t)
   }, [])
 
-  const running = proxy?.engines.find((e) => e.running) ?? null
-  const node = proxy?.nodes.find((n) => n.id === proxy.selectedNodeId) ?? null
+  /* mod-provided status rows */
+  useEffect(() => {
+    const resolve = async (): Promise<void> => {
+      const registry = window.__DOLA_STATUS__
+      if (!registry) return
+      const rows: StatusLine[] = []
+      for (const entry of Object.values(registry)) {
+        try {
+          rows.push(...(await entry.resolve()))
+        } catch {
+          /* a broken mod must not break the page */
+        }
+      }
+      setModStatus(rows)
+    }
+    void resolve()
+    const t = setInterval(resolve, 8000)
+    return () => clearInterval(t)
+  }, [])
+
+  /* keep the page index in sync with the snapped scroll position */
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const onScroll = (): void => {
+      const i = Math.round(el.scrollTop / el.clientHeight)
+      setPageIndex(Math.max(0, Math.min(2, i)))
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const goTo = useCallback((index: number): void => {
+    const el = scrollerRef.current
+    if (!el) return
+    el.scrollTo({ top: index * el.clientHeight, behavior: 'smooth' })
+  }, [])
+
+  /**
+   * Shortcut page contents.
+   *
+   * Same source order as the rail, reversed so the grid fills from the top-right —
+   * the way a desktop arranges icons.
+   */
+  const shortcuts = (() => {
+    const builtins = BUILTIN_TOOLS.map((t) => ({ id: t.id, name: t.name, icon: t.icon }))
+    const modEntries = mods.filter((m) => m.enabled).map((m) => ({ id: m.id, name: m.name, icon: m.icon }))
+    const all = [...builtins, ...modEntries]
+    const byId = new Map(all.map((x) => [x.id, x]))
+    const ordered = order.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+    for (const entry of all) if (!ordered.some((x) => x.id === entry.id)) ordered.push(entry)
+    return ordered.reverse()
+  })()
 
   return (
-    <div className="home">
-      <section className="home-hero">
-        <div className="home-hero-logo">
-          <Icon name="bookOpen" size={38} />
+    <div className="home-scroll" ref={scrollerRef}>
+      {/* ---------------- page 1: welcome ---------------- */}
+      <section className="home-page home-welcome">
+        <div className="home-welcome-inner">
+          <img className="home-logo" src={logoUrl} alt="" draggable={false} />
+          <h1 className="home-greeting">欢迎使用 Dola Toolkit~φ(゜▽゜*)♪</h1>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1>Dola Toolkit</h1>
-          <p>
-            一个 Material You 风格的桌面工具箱。左侧可拖拽排序工具，取色跟随壁纸莫奈调色，
-            设置永久驻留在工具栏底部。当前版本 <b>{APP_VERSION_LABEL}</b>。
-          </p>
-        </div>
-        <div className="hstack" style={{ gap: 10, flexShrink: 0 }}>
-          <div className="palette-strip" style={{ maxWidth: 210, justifyContent: 'flex-end' }}>
-            {[monet.light.primary, monet.light.secondary, monet.light.tertiary, monet.light.primaryContainer, monet.dark.primary].map(
-              (c, i) => (
-                <span key={i} className="sw" style={{ background: c }} title={c} />
-              )
-            )}
-          </div>
-        </div>
+        <button type="button" className="home-chevron" onClick={() => goTo(1)} aria-label="下一页" title="下一页">
+          <Icon name="expandMore" size={22} />
+        </button>
       </section>
 
-      <div className="home-section-title">工具</div>
-      <div className="tool-cards">
-        {BUILTIN_TOOLS.map((t) => (
-          <button key={t.id} className="tool-card" onClick={() => setPage(t.id)}>
-            <span className="tool-card-glyph">
-              <Icon name={t.icon as IconName} size={26} />
+      {/* ---------------- page 2: shortcuts ---------------- */}
+      <section className="home-page home-shortcuts">
+        <header className="home-page-head">
+          <span className="home-page-title">我的工具</span>
+          <span className="tiny muted">点击图标进入工具，顺序与侧边栏一致</span>
+        </header>
+        <div className="shortcut-grid" role="list">
+          {shortcuts.map((s) => (
+            <button
+              key={s.id}
+              role="listitem"
+              className="shortcut"
+              onClick={() => setPage(s.id)}
+              aria-label={s.name}
+              title={s.name}
+            >
+              <span className="shortcut-icon">
+                <Icon name={s.icon as IconName} size={26} />
+              </span>
+              <span className="shortcut-label">{s.name}</span>
+            </button>
+          ))}
+          <button
+            className="shortcut shortcut-add"
+            onClick={() => setPage('add-tool')}
+            aria-label="添加工具"
+            title="添加工具"
+          >
+            <span className="shortcut-icon">
+              <Icon name="add" size={26} />
             </span>
-            <div style={{ minWidth: 0 }}>
-              <h3>{t.name}</h3>
-              <p>{t.desc}</p>
-            </div>
+            <span className="shortcut-label">添加</span>
           </button>
-        ))}
-        <button className="tool-card" onClick={() => setPage('settings')}>
-          <span className="tool-card-glyph" style={{ background: 'var(--md-tertiary-container)', color: 'var(--md-on-tertiary-container)' }}>
-            <Icon name="settings" size={26} />
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <h3>设置</h3>
-            <p>取色、AI、WebDAV 同步与关于</p>
-          </div>
+        </div>
+        <button type="button" className="home-chevron" onClick={() => goTo(2)} aria-label="下一页" title="下一页">
+          <Icon name="expandMore" size={22} />
         </button>
-      </div>
+      </section>
 
-      <div className="home-section-title">状态</div>
-      <div className="grid-3" style={{ gap: 12 }}>
-        <div className="card" style={{ padding: '14px 16px' }}>
-          <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
-            <Icon name="proxy" size={18} />
-            <span className="strong" style={{ fontSize: 13 }}>
-              代理
-            </span>
-            <span className="spacer" />
-            {running ? <Badge tone="ok" dot>运行中</Badge> : <Badge>未启动</Badge>}
-          </div>
-          <div className="tiny muted">内核：{running ? engineLabel(running.engine) : '—'}</div>
-          <div className="tiny muted" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            节点：{node?.name ?? '未选择'}
-          </div>
-          <div className="tiny muted" style={{ marginTop: 2 }}>
-            端口：{proxy?.settings.mixedPort ?? '—'} · 节点数 {proxy?.nodes.length ?? 0}
-          </div>
+      {/* ---------------- page 3: status ---------------- */}
+      <section className="home-page home-status">
+        <header className="home-page-head">
+          <span className="home-page-title">运行状态</span>
+          <span className="tiny muted">当前软件提供的服务</span>
+        </header>
+        <div className="status-list">
+          {buildStatus(proxy, ai, sync, mods.length).map((row) => (
+            <div key={row.id} className="status-row">
+              <span className={`status-dot ${row.tone}`} />
+              <span className="status-label">{row.label}</span>
+              <span className="status-value">{row.value}</span>
+            </div>
+          ))}
+          {modStatus.map((row) => (
+            <div key={row.id} className="status-row">
+              <span className={`status-dot ${row.tone}`} />
+              <span className="status-label">{row.label}</span>
+              <span className="status-value">{row.value}</span>
+            </div>
+          ))}
         </div>
-        <div className="card" style={{ padding: '14px 16px' }}>
-          <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
-            <Icon name="autoAi" size={18} />
-            <span className="strong" style={{ fontSize: 13 }}>
-              AI
-            </span>
-            <span className="spacer" />
-            {ai?.configured ? <Badge tone="ok">已配置</Badge> : <Badge tone="warn">未配置</Badge>}
-          </div>
-          <div className="tiny muted" style={{ wordBreak: 'break-all' }}>{ai?.model || '—'}</div>
-          <div className="tiny muted" style={{ marginTop: 2, wordBreak: 'break-all' }}>{ai?.baseUrl || '—'}</div>
-        </div>
-        <div className="card" style={{ padding: '14px 16px' }}>
-          <div className="hstack" style={{ gap: 8, marginBottom: 8 }}>
-            <Icon name="cloudSync" size={18} />
-            <span className="strong" style={{ fontSize: 13 }}>
-              WebDAV
-            </span>
-            <span className="spacer" />
-            {sync?.configured ? <Badge tone="ok">已配置</Badge> : <Badge>未配置</Badge>}
-          </div>
-          <div className="tiny muted">上次同步：{sync?.lastSyncAt ? new Date(sync.lastSyncAt).toLocaleString() : '从未'}</div>
-          <div className="tiny muted" style={{ marginTop: 2 }}>{info ? `v${info.version} · Electron ${info.electron}` : '—'}</div>
-        </div>
-      </div>
-
-      {!info ? <Empty icon="info" title="正在读取信息" /> : null}
+        <button
+          type="button"
+          className="home-chevron up"
+          onClick={() => goTo(0)}
+          aria-label="回到顶部"
+          title="回到顶部"
+        >
+          <Icon name="expandMore" size={22} />
+        </button>
+      </section>
     </div>
   )
+}
+
+/** Rows describing what the app is currently doing. */
+function buildStatus(
+  proxy: ProxyState | null,
+  ai: AIStatus | null,
+  sync: SyncStatus | null,
+  modCount: number
+): StatusLine[] {
+  const running = proxy?.engines.find((e) => e.running) ?? null
+  return [
+    {
+      id: 'proxy',
+      label: '代理服务',
+      value: running ? `运行中 · ${engineLabel(running.engine)}` : '未启动',
+      tone: running ? 'ok' : 'idle'
+    },
+    {
+      id: 'nodes',
+      label: '节点',
+      value: proxy ? `${proxy.nodes?.length ?? 0} 个` : '—',
+      tone: proxy ? 'ok' : 'idle'
+    },
+    {
+      id: 'ai',
+      label: 'AI 助手',
+      value: ai?.configured ? `已配置${ai.model ? ` · ${ai.model}` : ''}` : '未配置',
+      tone: ai?.configured ? 'ok' : 'idle'
+    },
+    {
+      id: 'sync',
+      label: 'WebDAV 同步',
+      value: sync?.configured ? '已配置' : '未配置',
+      tone: sync?.configured ? 'ok' : 'idle'
+    },
+    {
+      id: 'mods',
+      label: '工具数量',
+      value: `${modCount + BUILTIN_TOOLS.length} 个（含内置 ${BUILTIN_TOOLS.length}）`,
+      tone: 'ok'
+    }
+  ]
 }

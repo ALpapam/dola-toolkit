@@ -47,6 +47,14 @@ export interface WebDavSettings {
   autoSync: boolean
   /** what gets uploaded: settings | library | both */
   scope: 'settings' | 'library' | 'both'
+  /**
+   * What to back up when syncing.
+   *
+   * Replaces the three-way `scope` as the primary control: `settings`, `library`, and
+   * `mod:<id>` for tools that declare a backup file. `scope` is still written for
+   * compatibility with older builds.
+   */
+  items?: string[]
 }
 
 export interface ProxySettings {
@@ -628,6 +636,8 @@ export interface ModRecordInfo {
   settingsName: string
   createdAt: string
   entry: string
+  /** file (relative to userData) this tool wants backed up, when it declares one */
+  backupFile?: string
   installedAt: number
   /** true until the first-run guide has been dismissed once */
   firstRun: boolean

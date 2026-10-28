@@ -208,14 +208,6 @@ export function NavRail(): JSX.Element {
               aria-label={t.name}
               aria-current={page === t.id ? 'page' : undefined}
             >
-              {/* a drag affordance: three bars to the left of a mod's icon */}
-              {t.mod ? (
-                <span className="rail-item-grip" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              ) : null}
               <span className="rail-item-icon">
                 <Icon name={t.icon as IconName} size={22} />
               </span>

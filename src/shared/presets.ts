@@ -19,8 +19,8 @@ export interface ThemePreset {
 }
 
 export const THEME_PRESETS: ThemePreset[] = [
-  { id: 'dola', name: '多拉紫', en: 'Dola Purple', seed: '#9A6BD8' },
-  { id: 'classic', name: '典雅紫', en: 'Classic MD3', seed: '#6750A4' },
+  { id: 'dola', name: '多拉紫', en: 'Dola Purple', seed: '#C77DFF' },
+  { id: 'classic', name: '典雅紫', en: 'Classic MD3', seed: '#4F378B' },
   { id: 'sakura', name: '樱粉', en: 'Sakura', seed: '#D4789B' },
   { id: 'ocean', name: '深海蓝', en: 'Ocean', seed: '#2F6FB5' },
   { id: 'matcha', name: '抹茶绿', en: 'Matcha', seed: '#4C8A57' },

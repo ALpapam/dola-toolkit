@@ -6,11 +6,15 @@
 // `SyncStatus` and `sync:changed` broadcasts.
 // ---------------------------------------------------------------------------
 
+import { app } from 'electron'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { BookRecord, FolderRecord, SyncStatus, WebDavSettings } from '../shared/types'
 import { IPC } from '../shared/channels'
 import { APP_VERSION } from '../shared/version'
 import { getLibraryStore, broadcast, type LibraryStore } from './library/store'
 import { getSettings, patchSettings } from './store'
+import { listMods } from './mods/manager'
 
 const PROBE_TIMEOUT_MS = 10_000
 const SYNC_TIMEOUT_MS = 60_000
@@ -26,6 +30,8 @@ interface ResolvedSync {
   lastSyncAt: string | null
   autoSync: boolean
   scope: WebDavSettings['scope']
+  /** explicit selection; falls back to `scope` when absent */
+  items: string[] | undefined
 }
 
 export interface RemoteLibraryFile {
@@ -47,7 +53,8 @@ function readSyncConfig(): ResolvedSync {
     remoteDir: '',
     lastSyncAt: null,
     autoSync: false,
-    scope: 'both'
+    scope: 'both',
+    items: undefined
   }
   try {
     // Static import — a runtime require cannot resolve inside the bundled main.
@@ -60,7 +67,8 @@ function readSyncConfig(): ResolvedSync {
       remoteDir: typeof sync.remoteDir === 'string' ? sync.remoteDir.trim() : '',
       lastSyncAt: typeof sync.lastSyncAt === 'string' ? sync.lastSyncAt : null,
       autoSync: sync.autoSync ?? false,
-      scope: sync.scope === 'settings' || sync.scope === 'library' ? sync.scope : 'both'
+      scope: sync.scope === 'settings' || sync.scope === 'library' ? sync.scope : 'both',
+      items: Array.isArray(sync.items) && sync.items.length > 0 ? sync.items : undefined
     }
   } catch {
     return fallback
@@ -249,6 +257,26 @@ export async function runSync(): Promise<SyncStatus> {
 }
 
 /** The actual DAV conversation; returns an outcome instead of a status. */
+/** Items selected for this sync run, defaulting to the legacy scope. */
+function selectedItems(cfg: ResolvedSync): string[] {
+  const raw = cfg.items
+  if (Array.isArray(raw) && raw.length > 0) return raw
+  const scope = cfg.scope
+  if (scope === 'settings') return ['settings']
+  if (scope === 'library') return ['library']
+  return ['settings', 'library']
+}
+
+/**
+ * Remote name for a mod's backup.
+ *
+ * Each tool that declares `backupFile` gets its own remote file, so one tool's backup
+ * can never overwrite another's (or the app settings).
+ */
+function remoteForMod(id: string): string {
+  return `dola-mod-${id.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`
+}
+
 async function performSync(cfg: ResolvedSync): Promise<{ ok: boolean; message: string }> {
   const store = getLibraryStore()
   await store.load()
@@ -257,8 +285,9 @@ async function performSync(cfg: ResolvedSync): Promise<{ ok: boolean; message: s
 
   const since = parseRemoteTime(cfg.lastSyncAt)
   const messages: string[] = []
+  const items = selectedItems(cfg)
 
-  if (cfg.scope === 'library' || cfg.scope === 'both') {
+  if (items.includes('library')) {
     if (await remoteIsNewer(cfg, REMOTE_LIBRARY, since)) {
       const merged = await mergeRemoteLibrary(store, cfg)
       messages.push(merged.message)
@@ -273,7 +302,7 @@ async function performSync(cfg: ResolvedSync): Promise<{ ok: boolean; message: s
     messages.push('书库已上传')
   }
 
-  if (cfg.scope === 'settings' || cfg.scope === 'both') {
+  if (items.includes('settings')) {
     const settingsJson = readSettingsJson()
     if (settingsJson) {
       const put = await dav(remoteUrl(cfg, REMOTE_SETTINGS), 'PUT', cfg, {
@@ -283,6 +312,35 @@ async function performSync(cfg: ResolvedSync): Promise<{ ok: boolean; message: s
       if (!put.ok) return { ok: false, message: `上传设置失败：${put.error ?? `HTTP ${put.status}`}` }
       messages.push('设置已上传')
     }
+  }
+
+  /*
+   * Tool backups.
+   *
+   * A tool opts in with `backupFile` in its manifest — a path relative to the user data
+   * directory. Missing files are reported but never fail the whole sync: an unconfigured
+   * tool should not block settings and library from being backed up.
+   */
+  for (const item of items) {
+    if (!item.startsWith('mod:')) continue
+    const id = item.slice('mod:'.length)
+    const record = listMods().find((m) => m.id === id)
+    if (!record?.backupFile) continue
+    const file = join(app.getPath('userData'), record.backupFile)
+    if (!existsSync(file)) {
+      messages.push(`${record.name}：没有可备份的数据`)
+      continue
+    }
+    const body = readFileSync(file, 'utf8')
+    const put = await dav(remoteUrl(cfg, remoteForMod(id)), 'PUT', cfg, {
+      body,
+      contentType: 'application/json; charset=utf-8'
+    })
+    if (!put.ok) {
+      messages.push(`${record.name} 备份失败：${put.error ?? `HTTP ${put.status}`}`)
+      continue
+    }
+    messages.push(`${record.name} 已备份`)
   }
 
   patchLastSyncAt(new Date().toISOString())

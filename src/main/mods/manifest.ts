@@ -36,6 +36,12 @@ export interface ModManifest {
   settingsIcon: string
   /** bundle file, relative to the manifest's folder */
   entry: string
+  /**
+   * Optional file the tool wants backed up by WebDAV sync, relative to the user data
+   * directory (e.g. `library/library.json`). Tools without one simply do not appear in
+   * the sync list.
+   */
+  backupFile: string
 }
 
 export interface ModInfo extends ModManifest {
@@ -93,6 +99,7 @@ export function parseManifest(raw: string, dir: string): ModInfo {
     icon: asString(data.icon, 'icon', false) || 'extension',
     settingsIcon: asString(data.settingsIcon, 'settingsIcon', false) || 'settings',
     entry,
+    backupFile: asString(data.backupFile, 'backupFile', false),
     dir
   }
 }

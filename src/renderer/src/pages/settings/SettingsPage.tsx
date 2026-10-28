@@ -6,6 +6,7 @@ import { Button, Dialog, IconButton, Segmented, Select, SettingRow, Slider, Spin
 import { Icon, type IconName } from '../../ui/Icon'
 import { toast } from '../../ui/toast'
 import { ToolsSection } from './ToolsSection'
+import { SyncScopeDialog } from './SyncScopeDialog'
 import { fmtDate } from '../../ui/format'
 import { APP_NAME, APP_NAME_CN, APP_VERSION_LABEL, GITHUB_REPO } from '@shared/version'
 import { THEME_PRESETS, presetById } from '@shared/presets'
@@ -789,6 +790,7 @@ function SyncSection({ settings, patch }: { settings: Settings; patch: (p: Setti
   const [testing, setTesting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [scopeOpen, setScopeOpen] = useState(false)
 
   useEffect(() => {
     void window.api.sync.status().then(setStatus).catch(() => undefined)
@@ -871,16 +873,15 @@ function SyncSection({ settings, patch }: { settings: Settings; patch: (p: Setti
               prefixIcon="folderData"
             />
           </div>
-          <Select
-            label="同步内容"
-            value={s.scope}
-            onChange={(v) => void patch({ sync: { scope: v as typeof s.scope } })}
-            options={[
-              { value: 'both', label: '设置 + 书库' },
-              { value: 'settings', label: '仅设置' },
-              { value: 'library', label: '仅书库' }
-            ]}
-          />
+          {/* 同步内容改为弹窗选择，可勾选设置 / 书库 / 各插件的数据 */}
+          <div>
+            <div className="tiny muted" style={{ marginBottom: 6 }}>
+              同步内容
+            </div>
+            <Button variant="outlined" icon="cloudSync" onClick={() => setScopeOpen(true)}>
+              {syncScopeLabel(s.items)}
+            </Button>
+          </div>
           <div className="hstack" style={{ alignItems: 'flex-end', gap: 8 }}>
             <div style={{ flex: 1 }}>
               <div className="tiny muted">自动同步</div>
@@ -888,6 +889,20 @@ function SyncSection({ settings, patch }: { settings: Settings; patch: (p: Setti
             </div>
           </div>
         </div>
+        <SyncScopeDialog
+          open={scopeOpen}
+          onClose={() => setScopeOpen(false)}
+          value={s.items ?? defaultItems(s.scope)}
+          onConfirm={(items) => {
+            void (async () => {
+              // persist first so 自动同步 uses the same selection, then run
+              await patch({ sync: { items, scope: scopeFor(items) } })
+              setScopeOpen(false)
+              await run()
+            })()
+          }}
+          busy={syncing}
+        />
         <div style={{ padding: '0 20px 18px' }} className="hstack">
           <Button variant="filled" icon="save" onClick={save}>
             保存
@@ -1306,4 +1321,35 @@ function UpdateSection(): JSX.Element {
       </div>
     </>
   )
+}
+
+
+/** Default selection for a legacy `scope` value. */
+function defaultItems(scope: Settings['sync']['scope']): string[] {
+  if (scope === 'settings') return ['settings']
+  if (scope === 'library') return ['library']
+  return ['settings', 'library']
+}
+
+/** Legacy `scope` derived from a selection, kept for older builds. */
+function scopeFor(items: string[]): Settings['sync']['scope'] {
+  const hasSettings = items.includes('settings')
+  const hasLibrary = items.includes('library')
+  if (hasSettings && hasLibrary) return 'both'
+  if (hasSettings) return 'settings'
+  if (hasLibrary) return 'library'
+  // only tool data selected: 'both' would upload the app data too, so pick the
+  // narrowest legacy value and let `items` drive the actual run
+  return 'settings'
+}
+
+/** Label for the 同步内容 button. */
+function syncScopeLabel(items: string[] | undefined): string {
+  const list = items && items.length > 0 ? items : ['settings', 'library']
+  const names: string[] = []
+  if (list.includes('settings')) names.push('设置')
+  if (list.includes('library')) names.push('书库')
+  const mods = list.filter((i) => i.startsWith('mod:')).length
+  if (mods > 0) names.push(`${mods} 个插件数据`)
+  return names.join(' + ') || '未选择'
 }

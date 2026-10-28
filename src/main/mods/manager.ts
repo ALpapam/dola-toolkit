@@ -30,6 +30,8 @@ export interface ModRecord {
   settingsName: string
   createdAt: string
   entry: string
+  /** path (relative to userData) this tool wants backed up, if any */
+  backupFile: string
   /** epoch ms of installation */
   installedAt: number
   /** true until the first-run guide has been shown once */
@@ -194,6 +196,7 @@ export async function importModFromZip(zipPath: string): Promise<ImportResult> {
     settingsName: info.settingsName,
     createdAt: info.createdAt,
     entry: info.entry,
+    backupFile: info.backupFile,
     installedAt: previous?.installedAt ?? Date.now(),
     // an upgrade keeps the "already introduced" state so the guide is not shown again
     firstRun: previous ? previous.firstRun && compareVersions(info.version, previous.version) === 0 : true,

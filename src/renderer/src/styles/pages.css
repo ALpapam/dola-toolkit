@@ -1773,3 +1773,269 @@
   border-radius: var(--shape-full);
   pointer-events: none;
 }
+/* ------------------------------------------------------------------ */
+/* 主菜单：三页滚动吸附                                                  */
+/* ------------------------------------------------------------------ */
+
+.home-scroll {
+  height: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+
+.home-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+.home-page {
+  position: relative;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-6) var(--sp-7);
+  box-sizing: border-box;
+}
+
+/* page 1 */
+.home-welcome {
+  align-items: center;
+  justify-content: center;
+}
+
+.home-welcome-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-5);
+  text-align: center;
+}
+
+.home-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 26px;
+  /* a soft plate keeps the logo readable on every palette */
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
+
+.home-greeting {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--md-on-surface);
+}
+
+/* the small "more below" affordance */
+.home-chevron {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 28px;
+  border: none;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--md-on-surface) 6%, transparent);
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  animation: chevron-bob 2.2s ease-in-out infinite;
+  transition: background-color 150ms ease;
+}
+
+.home-chevron:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 12%, transparent);
+}
+
+.home-chevron.up {
+  transform: translateX(-50%) rotate(180deg);
+}
+
+@keyframes chevron-bob {
+  0%, 100% { margin-bottom: 0; }
+  50% { margin-bottom: -5px; }
+}
+
+/* page 2 */
+.home-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-4);
+}
+
+.home-page-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.shortcut-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--sp-5) var(--sp-4);
+  padding-bottom: var(--sp-6);
+}
+
+/* right-to-left fill, like icons dropped from the top-right corner */
+.shortcut-grid {
+  direction: rtl;
+}
+
+.shortcut-grid > * {
+  direction: ltr;
+}
+
+.shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border: none;
+  border-radius: var(--shape-md);
+  background: transparent;
+  color: var(--md-on-surface);
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.shortcut:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
+}
+
+.shortcut:active {
+  transform: scale(0.94);
+}
+
+.shortcut-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.shortcut-add .shortcut-icon {
+  background: color-mix(in srgb, var(--md-on-surface) 10%, transparent);
+  color: var(--md-primary);
+}
+
+.shortcut-label {
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* page 3 */
+.home-status {
+  align-items: stretch;
+}
+
+.status-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 14px var(--sp-4);
+  border-radius: var(--shape-md);
+  background: color-mix(in srgb, var(--md-on-surface) 4%, transparent);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.status-dot.ok { background: #46c07a; }
+.status-dot.idle { background: color-mix(in srgb, var(--md-on-surface) 30%, transparent); }
+.status-dot.warn { background: #e0a03a; }
+
+.status-label {
+  flex: 1 1 auto;
+  font-size: 13px;
+}
+
+.status-value {
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+}
+
+/* ------------------------------------------------------------------ */
+/* 色块化：用实心面色区分模块，不再依赖细线条                            */
+/*                                                                     */
+/* 之前每个卡片都靠 1px 描边勾边，整屏全是线，显得碎。现在改为不同层级的 */
+/* surface 色块 + 间距区分，描边只保留在真正需要边界的地方。             */
+/* ------------------------------------------------------------------ */
+
+.set-card {
+  border: none;
+  background: var(--md-surface-container);
+  border-radius: var(--shape-lg);
+  box-shadow: none;
+}
+
+/* 相邻卡片之间靠间距呼吸，不再需要分隔线 */
+.set-card + .set-card {
+  margin-top: var(--sp-3);
+}
+
+/* 分组标题做成一枚色块标签，模块边界一眼可见 */
+.set-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 999px;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.set-section-desc {
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+
+/* 设置项本身用更浅的一层，和卡片底色拉开层次 */
+.set-item {
+  border-radius: var(--shape-md);
+  padding-left: var(--sp-4);
+  padding-right: var(--sp-4);
+}
+
+.set-item + .set-item {
+  border-top: 1px solid color-mix(in srgb, var(--md-outline-variant) 28%, transparent);
+}
+
+/* 工具/插件行、状态行已经是色块，这里统一圆角与间距 */
+.tools-card {
+  background: var(--md-surface-container);
+  border: none;
+}
+
+.status-row {
+  background: var(--md-surface-container);
+}
