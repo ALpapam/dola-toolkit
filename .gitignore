@@ -23,3 +23,8 @@ cores/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 插件（mod）源码与打包产物不属于主程序仓库：
+# 开发在 ALpapam/Dola-Toolkit-mod，构建产物发布到该仓库的 Release。
+mods/
+mod/

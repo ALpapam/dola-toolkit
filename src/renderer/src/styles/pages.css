@@ -1880,7 +1880,8 @@
   display: flex;
   align-items: baseline;
   gap: var(--sp-3);
-  padding: 0 var(--sp-2) var(--sp-5);
+  /* nudged right so the heading reads as part of the content column, not the rail */
+  padding: 0 var(--sp-2) var(--sp-5) var(--sp-3);
 }
 
 .home-page-title {
@@ -2098,7 +2099,12 @@
   touch-action: pan-y;
 }
 
-/* while the mouse is pulling the page, snapping must be off or it springs back */
+/*
+ * While the mouse is pulling the page both snapping and smooth scrolling have to go.
+ * `scroll-behavior: smooth` applies to direct `scrollTop` writes too, so the page
+ * lagged behind the cursor by a full animation; auto makes it track 1:1.
+ */
 .home-scroll.dragging-page {
   scroll-snap-type: none;
+  scroll-behavior: auto;
 }

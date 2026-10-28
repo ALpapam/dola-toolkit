@@ -15,7 +15,7 @@ body {
   font-size: 14px;
   line-height: 1.45;
   letter-spacing: 0.25px;
-  background: var(--md-background);
+  background: var(--dola-bg);
   color: var(--md-on-background);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -100,7 +100,7 @@ img {
   display: flex;
   height: 100%;
   width: 100%;
-  background: var(--md-background);
+  background: var(--dola-bg);
   position: relative;
   overflow: hidden;
 }
@@ -400,7 +400,7 @@ img {
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-2) 0 var(--sp-4);
-  background: var(--md-background);
+  background: var(--dola-bg);
   -webkit-app-region: drag;
   z-index: 15;
 }

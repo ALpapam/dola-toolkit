@@ -131,17 +131,24 @@ export function HomePage(): JSX.Element {
       if (!drag || !el) return
       drag.lastY = e.clientY
       const dy = e.clientY - drag.startY
-      if (!drag.moved && Math.abs(dy) > 4) {
+      const isFirst = !drag.moved
+      if (isFirst && Math.abs(dy) > 4) {
         drag.moved = true
+        // applied imperatively: a React state update lands a frame too late, and the
+        // first scroll write would still animate with the stylesheet's smooth behaviour
+        el.classList.add('dragging-page')
         setPageDragging(true)
       }
       if (!drag.moved) return
       const max = el.scrollHeight - el.clientHeight
-      el.scrollTop = Math.max(0, Math.min(max, drag.startScroll - dy))
+      // explicit `auto`: CSS `scroll-behavior: smooth` animates direct scrollTop writes
+      // as well, which made the page trail the cursor by roughly half the gesture
+      el.scrollTo({ top: Math.max(0, Math.min(max, drag.startScroll - dy)), behavior: 'auto' })
     }
     const onUp = (): void => {
       const drag = pageDrag.current
       pageDrag.current = null
+      scrollerRef.current?.classList.remove('dragging-page')
       setPageDragging(false)
       const el = scrollerRef.current
       if (!drag || !el || !drag.moved) return

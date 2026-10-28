@@ -25,6 +25,8 @@
   --md-error-container: #f9dedc;
   --md-on-error-container: #410e0b;
   --md-background: #fef7ff;
+  /* the MD3 surface is nearly white; a light rose wash keeps the app from looking stark */
+  --dola-bg: color-mix(in srgb, var(--md-background) 86%, #ffe1ef);
   --md-on-background: #1d1b20;
   --md-surface: #fef7ff;
   --md-on-surface: #1d1b20;
