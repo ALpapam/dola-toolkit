@@ -35,7 +35,7 @@ import { APP_VERSION } from '@shared/version'
 import type { AppUpdateInfo, CoreUpdateInfo, CoreId, DownloadChannel } from '@shared/types'
 import { getSettings } from './store'
 import { logUpdate } from './updateLog'
-import { proxyManager } from './proxy/manager'
+import { proxyCall } from './modService'
 import { coreRoots, findCore, invalidateCoreVersion, runCoreVersion } from './proxy/binary'
 
 const REPOS: Record<CoreId, { owner: string; repo: string; label: string; asset: RegExp; exe: string }> = {
@@ -71,7 +71,8 @@ const JSDELIVR_DATA = 'https://data.jsdelivr.com/v1/packages/gh'
 // network helpers
 // ---------------------------------------------------------------------------
 
-function fetchText(url: string, timeoutMs = 15000): Promise<string> {
+async function fetchText(url: string, timeoutMs = 15000): Promise<string> {
+  const proxyPort = await activeProxyPort()
   return new Promise((resolve, reject) => {
     // metadata goes through the proxy too: the GitHub API is just as unreachable
     // as the release downloads when the direct route is bad
@@ -92,7 +93,7 @@ function fetchText(url: string, timeoutMs = 15000): Promise<string> {
         res.on('end', () => resolve(body))
         res.on('error', reject)
       },
-      { proxyPort: activeProxyPort() }
+      { proxyPort }
     )
     req.on('error', reject)
     req.end()
@@ -122,17 +123,17 @@ function downloadTo(
   onProgress: (got: number, total: number) => void,
   timeoutMs = 600_000
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
+  /*
+   * The port is read once, before the transfer starts.
+   *
+   * It now lives in a mod service, so it is an async call — and doing it per redirect
+   * would mean awaiting inside the request callback that decides where to redirect.
+   * Reading it once is also what the user sees: the route is fixed for the whole file.
+   */
+  return (async () => {
+    const proxyPort = await activeProxyPort()
+    return new Promise<void>((resolve, reject) => {
     const go = (current: string, redirects: number): void => {
-      /*
-       * Resolved per request, not once per download.
-       *
-       * A single resolution at the top meant a transfer that began while no core was
-       * up kept using the direct route even after the proxy came back — the slow
-       * path this whole mechanism exists to avoid. Reading it at each hop also
-       * survives a redirect to a different host.
-       */
-      const proxyPort = activeProxyPort()
       if (redirects > 6) return reject(new Error('重定向过多'))
       const req = httpsGet(current, timeoutMs, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -195,7 +196,8 @@ function downloadTo(
       req.end()
     }
     go(url, 0)
-  })
+    })
+  })()
 }
 
 /** Wraps a release-asset URL for the mirror channel. */
@@ -313,12 +315,10 @@ function fallbackAssetUrl(engine: CoreId, version: string): string | null {
  * Only used while a core is actually running: without it the tunnel target does not
  * exist, and falling back to direct keeps updates working when the proxy is off.
  */
-function activeProxyPort(): number | null {
+async function activeProxyPort(): Promise<number | null> {
   try {
-    const running = proxyManager.state().engines.some((e) => e.running)
-    if (!running) return null
-    const port = getSettings().proxy.mixedPort
-    return port > 0 ? port : null
+    const port = await proxyCall<number | null>('active-port')
+    return typeof port === 'number' && port > 0 ? port : null
   } catch {
     return null
   }

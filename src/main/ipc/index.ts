@@ -12,13 +12,13 @@
 import { registerAppIpc } from './app'
 import { registerSettingsIpc } from './settings'
 import { registerThemeIpc } from './theme'
-import { registerProxyIpc } from './proxy'
 import { registerLibraryIpc } from './library'
 import { registerAiIpc } from './ai'
 import { registerSyncIpc } from './sync'
 import { registerFontsIpc } from './fonts'
 import { registerUpdatesIpc } from './updates'
 import { registerModsIpc } from '../mods/ipc'
+import { registerModServiceIpc } from '../modService'
 
 type Registrar = () => void
 
@@ -43,7 +43,7 @@ export function registerAllIpc(): void {
   safe('app', registerAppIpc)
   safe('settings', registerSettingsIpc)
   safe('theme', registerThemeIpc)
-  safe('proxy', registerProxyIpc)
+  safe('mod-services', registerModServiceIpc)
   // Feature modules owned by the library/AI/sync teammate.
   safe('library', registerLibraryIpc)
   safe('ai', registerAiIpc)

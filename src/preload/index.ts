@@ -56,22 +56,17 @@ const api = {
     monet: (force?: boolean) => ipcRenderer.invoke(IPC.themeMonet, force),
     onChanged: (cb: (m: unknown) => void) => on(IPC.themeChanged, cb)
   },
-  proxy: {
-    state: () => ipcRenderer.invoke(IPC.proxyState),
-    engines: () => ipcRenderer.invoke(IPC.proxyEngines),
-    saveNode: (node: unknown) => ipcRenderer.invoke(IPC.proxySaveNode, node),
-    deleteNode: (id: string) => ipcRenderer.invoke(IPC.proxyDeleteNode, id),
-    importLinks: (text: string) => ipcRenderer.invoke(IPC.proxyImportLinks, text),
-    selectNode: (id: string | null) => ipcRenderer.invoke(IPC.proxySelectNode, id),
-    start: () => ipcRenderer.invoke(IPC.proxyStart),
-    stop: () => ipcRenderer.invoke(IPC.proxyStop),
-    testNode: (id: string) => ipcRenderer.invoke(IPC.proxyTestNode, id),
-    setSystemProxy: (on: boolean) => ipcRenderer.invoke(IPC.proxySystemProxy, on),
-    importGeo: () => ipcRenderer.invoke(IPC.proxyImportGeo),
-    updateGeo: () => ipcRenderer.invoke(IPC.proxyUpdateGeo),
-    clearLogs: (engine: string) => ipcRenderer.invoke(IPC.proxyClearLogs, engine),
-    onState: (cb: (s: unknown) => void) => on(IPC.proxyStateChanged, cb),
-    onLog: (cb: (e: unknown) => void) => on(IPC.proxyLog, cb)
+  /** generic bridge to mod main-process services */
+  mod: {
+    invoke: (id: string, channel: string, ...args: unknown[]) =>
+      ipcRenderer.invoke(IPC.modInvoke, id, channel, args),
+    on: (id: string, channel: string, cb: (payload: unknown) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, msg: { id: string; channel: string; payload: unknown }): void => {
+        if (msg.id === id && msg.channel === channel) cb(msg.payload)
+      }
+      ipcRenderer.on(IPC.modEvent, handler)
+      return () => ipcRenderer.removeListener(IPC.modEvent, handler)
+    }
   },
   library: {
     state: () => ipcRenderer.invoke(IPC.libraryState),

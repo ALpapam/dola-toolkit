@@ -9,7 +9,7 @@ import type { AppInfo } from '@shared/types'
 import { APP_VERSION } from '@shared/version'
 import { getLogsDir, getSettings, patchSettings } from '../store'
 import { broadcast, getMainWindow, hideMainWindow } from '../window'
-import { proxyManager } from '../proxy/manager'
+import { proxyCall } from '../modService'
 import { ensureTray, notifyHidden, trayInfo } from '../tray'
 
 /** the "still running in the background" balloon is shown once per session */
@@ -69,8 +69,8 @@ export function registerAppIpc(): void {
   ipcMain.on(IPC.appQuit, () => {
     void (async () => {
       try {
-        await proxyManager.stop()
-        await proxyManager.setSystemProxy(false)
+        await proxyCall('stop')
+        await proxyCall('system-proxy', false)
       } catch {
         /* keep quitting regardless */
       }

@@ -9,7 +9,7 @@ import { IPC } from '@shared/channels'
 import { initStore, getLogsDir, getSettings, onSettingsChange } from './store'
 import { createMainWindow, getMainWindow, broadcast, showMainWindow, hideMainWindow } from './window'
 import { computeMonet } from './monet'
-import { proxyManager } from './proxy/manager'
+import { modServices, proxyCall, registerModServiceIpc } from './modService'
 import { registerAllIpc } from './ipc'
 import { ensureTray, refreshTrayMenu, destroyTray } from './tray'
 import { takeResumeProxy } from './resume'
@@ -164,6 +164,8 @@ function bootstrap(): void {
   let shuttingDown = false
 /** set once a real close is allowed, so the guard above stops intercepting */
 let allowWindowDestroy = false
+/** mod ids that should restart themselves after an in-app update */
+let resumeMods: string[] = []
 
   app.whenReady().then(
     async () => {
@@ -177,14 +179,6 @@ let allowWindowDestroy = false
 
       // settings must exist before any window or IPC handler touches them
       initStore(app.getPath('userData'))
-      /*
-       * The proxy manager reads the node store in its constructor, and
-       * `new ProxyManager()` runs when the module is first imported — before
-       * initStore had a directory to read from. Without this refresh it kept the
-       * empty defaults for the whole session, which is why the node list looked
-       * wiped after a restart (and the next write persisted that empty list).
-       */
-      proxyManager.reload()
       logsDir = getLogsDir()
 
       /*
@@ -242,7 +236,8 @@ let allowWindowDestroy = false
        * process with no window and no way back.
        */
       if (getSettings().general.closeToTray) ensureTray()
-      proxyManager.onState(() => refreshTrayMenu())
+      // the tray follows whatever the proxy mod broadcasts; the core keeps no state
+      modServices.subscribe('proxy', 'state-changed', () => refreshTrayMenu())
 
       /*
        * Native close (Alt+F4, taskbar context menu) must follow the same policy as
@@ -278,16 +273,17 @@ let allowWindowDestroy = false
         allowWindowDestroy = true
       })
 
-      // re-apply the persisted system-proxy state only if a core is running;
-      // never silently hijack the OS proxy on boot.
-      // `resume` is set when an in-app core update restarted the app: the proxy
-      // that update had to stop should come back even without 开机自启.
-      const resume = takeResumeProxy()
-      if (resume) {
-        void startProxyIfConfigured(true)
-      } else if (getSettings().proxy.autoStart) {
-        void startProxyIfConfigured()
-      }
+      /*
+       * Load the mod services, then let them start themselves.
+       *
+       * The resume marker is handed over as a plain list of mod ids: a feature that had
+       * to stop for an in-app update restarts even when 开机自启 is off, and the core
+       * stays unaware of what those features are.
+       */
+      if (takeResumeProxy()) resumeMods = ['proxy']
+      ;(globalThis as { __DOLA_RESUME_MODS__?: string[] }).__DOLA_RESUME_MODS__ = resumeMods
+      await modServices.loadAll(join(app.getPath('userData'), 'mods'))
+      void emitBoot()
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createMainWindow(getSettings())
@@ -338,15 +334,11 @@ let allowWindowDestroy = false
 
   async function shutdown(): Promise<void> {
     try {
-      await proxyManager.stop()
+      // every mod service gets a chance to clean up (the proxy stops its core and
+      // clears the system proxy here)
+      await modServices.emit('quit')
     } catch (e) {
-      writeCrashLog('shutdown.stopProxy', e)
-    }
-    try {
-      // make absolutely sure the OS proxy is not left pointing at a dead port
-      await proxyManager.setSystemProxy(false)
-    } catch (e) {
-      writeCrashLog('shutdown.clearSystemProxy', e)
+      writeCrashLog('shutdown.modServices', e)
     }
     try {
       const { flushStore } = await import('./store')
@@ -405,15 +397,16 @@ let allowWindowDestroy = false
    * 「启动时自动开启」 setting — which is exactly what the early `autoStart` return
    * below used to break, leaving them silently offline after an update.
    */
-  async function startProxyIfConfigured(force = false): Promise<void> {
+  /*
+   * Feature start-up belongs to the feature: the mod's `boot` hook decides whether to
+   * auto-start and consumes the resume-after-update marker. The core only announces the
+   * event.
+   */
+  async function emitBoot(): Promise<void> {
     try {
-      const settings = getSettings()
-      if (!force && !settings.proxy.autoStart) return
-      const state = proxyManager.state()
-      if (!state.selectedNodeId) return
-      await proxyManager.start()
+      await modServices.emit('boot')
     } catch (e) {
-      writeCrashLog('autoStartProxy', e)
+      writeCrashLog('modServices.boot', e)
     }
   }
 

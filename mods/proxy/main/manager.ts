@@ -41,21 +41,25 @@ import {
   validateMihomoYaml,
   xrayGeoEnv
 } from './config'
-import {
-  CORE_LABELS,
-  clearBinaryCache,
-  coreRoots,
-  findCore,
-  engineSupports,
-  enginesFor,
-  findGeo,
-  geoDir,
-  geoFileInfo,
-  findRuleSets,
-  listEngines,
-  runCoreVersion
-} from './binary'
-import { getDataDir, getProxyStore, getSettings, patchProxyStore } from '../store'
+import type { ModHostApi } from '../../../src/main/modService'
+
+/**
+ * Host services, injected by the mod entry before the manager is used.
+ *
+ * The manager used to import `../store` and `./binary` directly, which tied the proxy
+ * feature to the application core. Everything it needs now arrives through this handle,
+ * so the app carries no proxy knowledge at all.
+ */
+let host: ModHostApi = null as unknown as ModHostApi
+
+export function setProxyHost(api: ModHostApi): void {
+  host = api
+}
+
+/** The host handle, for the IPC layer that lives beside this file. */
+export function getProxyHost(): ModHostApi {
+  return host
+}
 
 const LOG_LIMIT = 400
 /**
@@ -142,7 +146,7 @@ export class ProxyManager {
   // -------------------------------------------------------------------------
 
   reload(): void {
-    const stored = getProxyStore()
+    const stored = host.store.get() as ProxyStore
     this.nodes = stored.nodes
     this.selectedNodeId = stored.selectedNodeId
     this.activeEngine = stored.activeEngine
@@ -150,7 +154,7 @@ export class ProxyManager {
   }
 
   private persist(): void {
-    patchProxyStore({
+    host.store.patch({
       nodes: this.nodes,
       selectedNodeId: this.selectedNodeId,
       activeEngine: this.activeEngine,
@@ -209,7 +213,7 @@ export class ProxyManager {
   // -------------------------------------------------------------------------
 
   settings(): ProxySettings {
-    return getSettings().proxy
+    return host.settings.get().proxy
   }
 
   state(): ProxyState {
@@ -226,7 +230,7 @@ export class ProxyManager {
 
   statusOf(engine: CoreId): CoreStatus {
     const run = this.running.get(engine) ?? emptyRunning()
-    const bin = findCore(engine)
+    const bin = host.cores.find(engine)
     return {
       engine,
       available: bin !== null,
@@ -242,7 +246,7 @@ export class ProxyManager {
   }
 
   async engines(): Promise<EngineCapability[]> {
-    const list = await listEngines()
+    const list = await host.cores.engines()
     for (const e of list) this.versions.set(e.engine, e.version)
     return list
   }
@@ -456,12 +460,12 @@ export class ProxyManager {
      * went through it. Reporting the mismatch (and naming a core that does work) is far
      * better than a silent black hole.
      */
-    if (!engineSupports(engine, node.protocol)) {
-      const alternatives = enginesFor(node.protocol).filter((e) => findCore(e) !== null)
+    if (!host.cores.supports(engine, node.protocol)) {
+      const alternatives = host.cores.enginesFor(node.protocol).filter((e) => host.cores.find(e) !== null)
       const suggest = alternatives.length
-        ? `请把该节点的内核改为 ${alternatives.map((e) => CORE_LABELS[e]).join(' 或 ')}`
+        ? `请把该节点的内核改为 ${alternatives.map((e) => host.cores.labels[e]).join(' 或 ')}`
         : '当前没有可用的内核支持该协议'
-      const msg = `${CORE_LABELS[engine]} 不支持 ${node.protocol.toUpperCase()} 节点，${suggest}`
+      const msg = `${host.cores.labels[engine]} 不支持 ${node.protocol.toUpperCase()} 节点，${suggest}`
       this.fail(engine, msg)
       return this.statusOf(engine)
     }
@@ -499,9 +503,9 @@ export class ProxyManager {
     run.error = null
     run.nodeId = node.id
 
-    const bin = findCore(engine)
+    const bin = host.cores.find(engine)
     if (!bin) {
-      this.running.set(engine, { ...emptyRunning(), nodeId: node.id, error: `未找到 ${CORE_LABELS[engine]} 核心文件` })
+      this.running.set(engine, { ...emptyRunning(), nodeId: node.id, error: `未找到 ${host.cores.labels[engine]} 核心文件` })
       this.emitState()
       return this.statusOf(engine)
     }
@@ -509,7 +513,7 @@ export class ProxyManager {
     const settings = this.settings()
     let configText: string
     try {
-      configText = buildCoreConfig(engine, node, settings, findRuleSets())
+      configText = buildCoreConfig(engine, node, settings, host.cores.ruleSets())
     } catch (e) {
       const msg = e instanceof Error ? e.message : '配置生成失败'
       this.running.set(engine, { ...emptyRunning(), nodeId: node.id, error: msg })
@@ -524,7 +528,7 @@ export class ProxyManager {
       }
     }
 
-    const dir = join(getDataDir(), 'proxy', engine)
+    const dir = join(host.dataDir, 'proxy', engine)
     try {
       mkdirSync(dir, { recursive: true })
     } catch {
@@ -557,7 +561,7 @@ export class ProxyManager {
     const args = startArgs(engine, cfgPath, dir)
     const env: NodeJS.ProcessEnv = { ...process.env }
     if (engine === 'xray') {
-      const geo = findGeo()
+      const geo = host.cores.geo()
       Object.assign(env, xrayGeoEnv(geo.dir))
     }
 
@@ -588,7 +592,7 @@ export class ProxyManager {
     })
     this.appendLog(
       engine,
-      `[dola] 启动 ${CORE_LABELS[engine]} pid=${child.pid ?? '?'} port=${settings.mixedPort}`
+      `[dola] 启动 ${host.cores.labels[engine]} pid=${child.pid ?? '?'} port=${settings.mixedPort}`
     )
 
     child.stdout?.on('data', (buf: Buffer) => this.onCoreData(engine, buf))
@@ -784,7 +788,7 @@ export class ProxyManager {
       return
     }
 
-    this.appendLog(engine, `[dola] 停止 ${CORE_LABELS[engine]} pid=${pid ?? '?'}`)
+    this.appendLog(engine, `[dola] 停止 ${host.cores.labels[engine]} pid=${pid ?? '?'}`)
     if (pid && process.platform === 'win32') {
       // kill the whole tree: core may spawn helper processes
       await new Promise<void>((resolve) => {
@@ -824,10 +828,10 @@ export class ProxyManager {
   /** Run `-test` / `check` and report the first meaningful error line. */
   private validateConfig(engine: CoreId, cfgPath: string): Promise<{ ok: boolean; message: string }> {
     return new Promise((resolve) => {
-      const bin = findCore(engine)
+      const bin = host.cores.find(engine)
       if (!bin) return resolve({ ok: false, message: '核心文件缺失' })
       const env: NodeJS.ProcessEnv = { ...process.env }
-      if (engine === 'xray') Object.assign(env, xrayGeoEnv(findGeo().dir))
+      if (engine === 'xray') Object.assign(env, xrayGeoEnv(host.cores.geo().dir))
       const homeDir = dirname(cfgPath)
       let out = ''
       let settled = false
@@ -865,7 +869,7 @@ export class ProxyManager {
   private bootstrapGeo(engine: CoreId, dir: string): void {
     if (engine !== 'mihomo') return
     try {
-      const geo = findGeo()
+      const geo = host.cores.geo()
       for (const name of ['geoip.dat', 'geosite.dat'] as const) {
         const target = join(dir, name)
         const from = name === 'geoip.dat' ? geo.geoip : geo.geosite
@@ -1092,8 +1096,8 @@ export class ProxyManager {
     }
     if (!node) return { ...base, error: '节点不存在' }
     const engine: CoreId = isEngine(node.engine) ? node.engine : this.settings().defaultEngine
-    const bin = findCore(engine)
-    if (!bin) return { ...base, error: `未找到 ${CORE_LABELS[engine]} 核心` }
+    const bin = host.cores.find(engine)
+    if (!bin) return { ...base, error: `未找到 ${host.cores.labels[engine]} 核心` }
 
     const settings = { ...this.settings() }
     const run = this.running.get(engine)
@@ -1111,7 +1115,7 @@ export class ProxyManager {
       const testSettings: ProxySettings = { ...settings, mixedPort: port, allowLan: false, systemProxy: false }
       let cfg: string
       try {
-        cfg = buildCoreConfig(engine, node, testSettings, findRuleSets())
+        cfg = buildCoreConfig(engine, node, testSettings, host.cores.ruleSets())
       } catch (e) {
         return { ...base, error: e instanceof Error ? e.message : '配置生成失败' }
       }
@@ -1130,7 +1134,7 @@ export class ProxyManager {
       }
       if (engine === 'mihomo') this.bootstrapGeo(engine, tempDir)
       const env: NodeJS.ProcessEnv = { ...process.env }
-      if (engine === 'xray') Object.assign(env, xrayGeoEnv(findGeo().dir))
+      if (engine === 'xray') Object.assign(env, xrayGeoEnv(host.cores.geo().dir))
       try {
         tempChild = spawn(bin, startArgs(engine, cfgPath, tempDir), {
           cwd: engine === 'mihomo' ? tempDir : join(bin, '..'),
@@ -1413,16 +1417,16 @@ export class ProxyManager {
   // -------------------------------------------------------------------------
 
   geoState(): GeoState {
-    const geo = findGeo()
+    const geo = host.cores.geo()
     return {
-      geoip: geoFileInfo(geo.geoip),
-      geosite: geoFileInfo(geo.geosite),
+      geoip: host.cores.geoInfo(geo.geoip),
+      geosite: host.cores.geoInfo(geo.geosite),
       dir: geo.dir
     }
   }
 
   async importGeo(): Promise<ProxyState> {
-    const targetDir = geoDir()
+    const targetDir = host.cores.geoDir()
     try {
       mkdirSync(targetDir, { recursive: true })
     } catch {
@@ -1446,13 +1450,13 @@ export class ProxyManager {
         )
       }
     }
-    clearBinaryCache()
+    host.cores.clearVersionCache()
     this.emitState()
     return this.state()
   }
 
   async updateGeo(): Promise<ProxyState> {
-    const targetDir = geoDir()
+    const targetDir = host.cores.geoDir()
     try {
       mkdirSync(targetDir, { recursive: true })
     } catch {
@@ -1488,7 +1492,7 @@ export class ProxyManager {
         this.appendLog(this.activeEngine, `[dola] ${name} 更新失败，保留旧文件`)
       }
     }
-    if (okCount > 0) clearBinaryCache()
+    if (okCount > 0) host.cores.clearVersionCache()
     this.emitState()
     return this.state()
   }
@@ -2132,7 +2136,15 @@ function strOf(v: unknown): string {
 // Singleton
 // ---------------------------------------------------------------------------
 
-export const proxyManager = new ProxyManager()
+let managerInstance: ProxyManager | null = null
+
+/** The shared manager; created on first use, after the host was injected. */
+export function proxyManagerRef(): ProxyManager {
+  if (!managerInstance) managerInstance = new ProxyManager()
+  return managerInstance
+}
+
+export { ProxyManager }
 
 export function isProxyManagerReady(): boolean {
   try {
