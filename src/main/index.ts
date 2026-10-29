@@ -9,11 +9,10 @@ import { IPC } from '@shared/channels'
 import { initStore, getLogsDir, getSettings, onSettingsChange } from './store'
 import { createMainWindow, getMainWindow, broadcast, showMainWindow, hideMainWindow } from './window'
 import { computeMonet } from './monet'
-import { modServices, proxyCall, registerModServiceIpc } from './modService'
+import { modServices, pendingResumeMods, proxyCall, registerModServiceIpc } from './modService'
 import { registerAllIpc } from './ipc'
 import { ensureTray, refreshTrayMenu, destroyTray } from './tray'
 import { takeResumeProxy } from './resume'
-import { applyStagedCores } from './coreStage'
 import { logUpdate } from './updateLog'
 
 // ---------------------------------------------------------------------------
@@ -189,19 +188,6 @@ let resumeMods: string[] = []
        * with nothing locked. It must run before `startProxyIfConfigured` below, or the
        * old binary would be loaded again.
        */
-      try {
-        const result = await applyStagedCores()
-        if (result.applied.length > 0) {
-          logUpdate('core.apply.ok', result.applied.join(', '))
-          stagedApplied = result.applied
-        }
-        if (result.failed.length > 0) {
-          logUpdate('core.apply.fail', result.failed.map((f) => `${f.engine}: ${f.error}`).join('; '))
-          stagedFailed = result.failed
-        }
-      } catch (e) {
-        logUpdate('core.apply.error', e instanceof Error ? e.message : String(e))
-      }
 
       // only one renderer is trusted: ours, loaded from file:// or the dev server
       app.on('web-contents-created', (_event, contents) => {
@@ -280,7 +266,9 @@ let resumeMods: string[] = []
        * to stop for an in-app update restarts even when 开机自启 is off, and the core
        * stays unaware of what those features are.
        */
-      if (takeResumeProxy()) resumeMods = ['proxy']
+      // a mod that asked to be resumed after its own restart
+      if (pendingResumeMods.length > 0) resumeMods = pendingResumeMods
+      else if (takeResumeProxy()) resumeMods = ['proxy']
       ;(globalThis as { __DOLA_RESUME_MODS__?: string[] }).__DOLA_RESUME_MODS__ = resumeMods
       await modServices.loadAll(join(app.getPath('userData'), 'mods'))
       void emitBoot()

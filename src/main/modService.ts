@@ -19,25 +19,15 @@
 // ---------------------------------------------------------------------------
 
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { existsSync as fsExists, mkdirSync as fsMkdir, readFileSync as fsRead, rmSync as fsRm, writeFileSync as fsWrite } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { DeepPartial, Settings } from '@shared/types'
 import { getSettings, patchSettings } from './store'
-import {
-  CORE_LABELS,
-  clearBinaryCache,
-  coreRoots,
-  engineSupports,
-  enginesFor,
-  findCore,
-  findGeo,
-  findRuleSets,
-  geoDir,
-  geoFileInfo,
-  listEngines,
-  runCoreVersion
-} from './proxy/binary'
+
+/** mod ids the next launch should resume (set by a mod's relaunch request). */
+export let pendingResumeMods: string[] = []
 
 /** Channel used by the renderer to reach any mod service. */
 export const MOD_INVOKE = 'mod:invoke'
@@ -70,23 +60,26 @@ export interface ModHostApi {
     get: () => unknown
     patch: (patch: unknown) => unknown
   }
-  cores: {
-    labels: typeof CORE_LABELS
-    find: typeof findCore
-    roots: typeof coreRoots
-    engines: typeof listEngines
-    version: typeof runCoreVersion
-    clearVersionCache: typeof clearBinaryCache
-    supports: typeof engineSupports
-    enginesFor: typeof enginesFor
-    geo: typeof findGeo
-    geoDir: typeof geoDir
-    geoInfo: typeof geoFileInfo
-    ruleSets: typeof findRuleSets
-  }
   windows: {
     all: () => BrowserWindow[]
     main: () => BrowserWindow | null
+  }
+  /** a small fs surface, so a mod does not have to reach for node:fs itself */
+  fs: {
+    rm: typeof fsRm
+    write: typeof fsWrite
+    read: typeof fsRead
+    exists: typeof fsExists
+    mkdir: typeof fsMkdir
+  }
+  app: {
+    version: string
+    quit: () => void
+    /**
+     * Restarts the app, optionally asking that a mod id be resumed on the next launch.
+     * `stop` runs first so a mod can release its processes/sockets.
+     */
+    relaunch: (resumeModId: string | null, stop: () => Promise<void>) => void
   }
   log: (level: 'info' | 'warn' | 'error', message: string) => void
 }
@@ -191,23 +184,29 @@ class ModServiceHost {
         get: () => getProxyStoreImpl(),
         patch: (patch) => patchProxyStoreImpl(patch)
       },
-      cores: {
-        labels: CORE_LABELS,
-        find: findCore,
-        roots: coreRoots,
-        engines: listEngines,
-        version: runCoreVersion,
-        clearVersionCache: clearBinaryCache,
-        supports: engineSupports,
-        enginesFor,
-        geo: findGeo,
-        geoDir,
-        geoInfo: geoFileInfo,
-        ruleSets: findRuleSets
-      },
       windows: {
         all: () => BrowserWindow.getAllWindows(),
         main: () => BrowserWindow.getAllWindows()[0] ?? null
+      },
+      fs: { rm: fsRm, write: fsWrite, read: fsRead, exists: fsExists, mkdir: fsMkdir },
+      app: {
+        version: app.getVersion(),
+        quit: () => app.quit(),
+        relaunch: (resumeModId, stop) => {
+          if (resumeModId) pendingResumeMods = [resumeModId]
+          void (async () => {
+            try {
+              await stop()
+            } catch {
+              /* keep going: a restart beats staying on the old binary */
+            }
+            // give Windows a moment to release sockets before the new process starts
+            setTimeout(() => {
+              app.relaunch()
+              app.quit()
+            }, 900)
+          })()
+        }
       },
       log: (level, message) => console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[mod:${id}] ${message}`)
     }

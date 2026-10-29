@@ -36,31 +36,7 @@ import type { AppUpdateInfo, CoreUpdateInfo, CoreId, DownloadChannel } from '@sh
 import { getSettings } from './store'
 import { logUpdate } from './updateLog'
 import { proxyCall } from './modService'
-import { coreRoots, findCore, invalidateCoreVersion, runCoreVersion } from './proxy/binary'
 
-const REPOS: Record<CoreId, { owner: string; repo: string; label: string; asset: RegExp; exe: string }> = {
-  xray: {
-    owner: 'XTLS',
-    repo: 'Xray-core',
-    label: 'Xray',
-    asset: /^Xray-windows-64\.zip$/i,
-    exe: 'xray.exe'
-  },
-  singbox: {
-    owner: 'SagerNet',
-    repo: 'sing-box',
-    label: 'sing-box',
-    asset: /sing-box-[\d.]+-windows-amd64\.zip$/i,
-    exe: 'sing-box.exe'
-  },
-  mihomo: {
-    owner: 'MetaCubeX',
-    repo: 'mihomo',
-    label: 'Mihomo',
-    asset: /^mihomo-windows-amd64(-compatible)?(-v[\d.]+)?\.zip$/i,
-    exe: 'mihomo.exe'
-  }
-}
 
 const APP_REPO = { owner: 'ALpapam', repo: 'dola-toolkit' }
 const MIRROR_PREFIX = 'https://gh-proxy.com/'
@@ -272,6 +248,11 @@ async function githubRelease(owner: string, repo: string): Promise<GithubRelease
  * `1.15.0-alpha.N` builds, so prereleases are filtered out: pushing a user onto
  * an alpha core just because they picked the mirror would be wrong.
  */
+/** Tags carrying a channel suffix are never offered as an app update. */
+function isPrerelease(tag: string): boolean {
+  return /-(alpha|beta|rc|dev)/i.test(tag)
+}
+
 async function jsdelivrTag(owner: string, repo: string): Promise<string | null> {
   try {
     const data = await fetchJson<{ tags?: { latest?: string }; versions?: { version: string }[] }>(
@@ -290,24 +271,8 @@ async function jsdelivrTag(owner: string, repo: string): Promise<string | null> 
   }
 }
 
-function isPrerelease(tag: string): boolean {
-  return /(alpha|beta|rc\d*|dev|preview|nightly)/i.test(tag)
-}
 
 /** Release-asset URL patterns, used when the GitHub API is unreachable. */
-function fallbackAssetUrl(engine: CoreId, version: string): string | null {
-  const v = version.replace(/^v/, '')
-  switch (engine) {
-    case 'xray':
-      return `https://github.com/XTLS/Xray-core/releases/download/v${v}/Xray-windows-64.zip`
-    case 'singbox':
-      return `https://github.com/SagerNet/sing-box/releases/download/v${v}/sing-box-${v}-windows-amd64.zip`
-    case 'mihomo':
-      return `https://github.com/MetaCubeX/mihomo/releases/download/v${v}/mihomo-windows-amd64-v${v}.zip`
-    default:
-      return null
-  }
-}
 
 /**
  * Local mixed-port to tunnel update traffic through, or null for a direct route.
@@ -536,67 +501,7 @@ export async function installAppUpdate(installerPath: string, targetVersion?: st
 
 const ENGINE_KEYS: CoreId[] = ['xray', 'singbox', 'mihomo']
 
-export async function checkCoreUpdates(): Promise<CoreUpdateInfo[]> {
-  const channel = currentChannel()
-  const out: CoreUpdateInfo[] = []
-  for (const engine of ENGINE_KEYS) {
-    const meta = REPOS[engine]
-    const local = await currentCoreVersion(engine)
-    let latest: string | null = null
-    let asset: { name: string; url: string; digest?: string | null } | null = null
 
-    /*
-     * Always ask the API for release metadata, even on the mirror channel.
-     *
-     * It is the only place the asset SHA-256 lives, and a checksum is what lets the
-     * update be verified at all. The channel only decides where the DOWNLOAD comes
-     * from; on the mirror the version falls back to jsDelivr if the API is unreachable,
-     * but then there is no digest and the archive is only size-checked.
-     */
-    const rel = await githubRelease(meta.owner, meta.repo)
-    if (rel?.tag_name) {
-      latest = rel.tag_name.replace(/^v/, '')
-      const hit = rel.assets?.find((a) => meta.asset.test(a.name))
-      if (hit) asset = { name: hit.name, url: hit.browser_download_url, digest: hit.digest ?? null }
-    }
-    if (!latest) {
-      const tag = await jsdelivrTag(meta.owner, meta.repo)
-      if (tag) latest = tag.replace(/^v/, '')
-    }
-    // the mirror path never touches the API, so build the asset URL from the
-    // known release naming when the API did not provide one
-    if (!asset?.url && latest) {
-      const url = fallbackAssetUrl(engine, latest)
-      if (url) asset = { name: `${meta.label}-${latest}.zip`, url }
-    }
-
-    const missing = local === null
-    out.push({
-      engine,
-      label: meta.label,
-      local,
-      latest,
-      missing,
-      updateAvailable: Boolean(latest) && (missing || compareVersions(latest!, local!) > 0),
-      channel,
-      assetUrl: asset?.url ?? null,
-      // "sha256:abc…" → "abc…"
-      assetSha256: asset?.digest ? asset.digest.replace(/^sha256:/i, '') : null,
-      error: latest ? null : '无法获取版本信息'
-    })
-  }
-  return out
-}
-
-async function currentCoreVersion(engine: CoreId): Promise<string | null> {
-  if (!findCore(engine)) return null
-  try {
-    const v = await runCoreVersion(engine)
-    return v ?? null
-  } catch {
-    return null
-  }
-}
 
 /** Downloads a core release archive, extracts the exe and replaces the local one. */
 /**
@@ -608,89 +513,9 @@ async function currentCoreVersion(engine: CoreId): Promise<string | null> {
  * archive is fetched first (through the proxy when it is up), and only the swap
  * needs the exe released, so `prepare` is called right before the replace.
  */
-export async function updateCore(
-  engine: CoreId,
-  onProgress: (percent: number) => void,
-  /** stops the core that owns the target exe; called after the download */
-  prepare: () => Promise<void> = async () => undefined
-): Promise<string> {
-  const meta = REPOS[engine]
-  const info = (await checkCoreUpdates()).find((c) => c.engine === engine)
-  if (!info) throw new Error('未找到内核信息')
-  if (!info.assetUrl) throw new Error(info.error ?? '没有可用的下载地址')
-
-  const dir = updateWorkDir('core')
-  rmSync(dir, { recursive: true, force: true })
-  mkdirSync(dir, { recursive: true })
-  const archive = join(dir, 'core.zip')
-  await downloadTo(viaChannel(info.assetUrl, info.channel), archive, (got, total) => {
-    if (total > 0) onProgress(Math.min(100, Math.round((got / total) * 100)))
-  })
-
-  /*
-   * Windows ships bsdtar, which reads zip archives.
-   *
-   * Resolved by absolute path: spawning it by bare name fails with a DLL
-   * initialisation error (0xC0000142) here, because the Electron main process can
-   * run with a PATH that has no System32 — the same trap as reg.exe and the
-   * installer launch.
-   */
-  const tarExe = join(process.env['SystemRoot'] || 'C:\Windows', 'System32', 'tar.exe')
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(tarExe, ['-xf', archive, '-C', dir], { windowsHide: true, stdio: 'ignore' })
-    child.on('error', reject)
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`解压失败 (${code})`))))
-  })
-
-  // Mihomo ships its binary under a versioned name
-  // (mihomo-windows-amd64-v1.19.33.exe) while the others use the plain name.
-  const exe =
-    findFile(dir, meta.exe) ??
-    findFileMatch(dir, new RegExp(`^${engine}.*\.exe$`, 'i')) ??
-    findFileMatch(dir, /^mihomo.*\.exe$/i)
-  if (!exe) throw new Error(`压缩包中没有可用的内核可执行文件`)
-
-  const targetRoot = coreRoots()[0]
-  const targetDir = join(targetRoot, engine === 'singbox' ? 'singbox' : engine)
-  mkdirSync(targetDir, { recursive: true })
-  const target = join(targetDir, meta.exe)
-  // a running core locks its exe; release it only now that the download is done
-  await prepare()
-  if (existsSync(target)) renameSync(target, `${target}.bak`)
-  renameSync(exe, target)
-  // the version probe caches its result, so the UI would otherwise keep showing
-  // the old version until the app restarted
-  invalidateCoreVersion(engine)
-  rmSync(dir, { recursive: true, force: true })
-  return target
-}
 
 /** Case-insensitive search for any file whose name matches the pattern. */
-function findFileMatch(dir: string, pattern: RegExp): string | null {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      const nested = findFileMatch(full, pattern)
-      if (nested) return nested
-    } else if (pattern.test(entry.name)) {
-      return full
-    }
-  }
-  return null
-}
 
-function findFile(dir: string, name: string): string | null {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      const nested = findFile(full, name)
-      if (nested) return nested
-    } else if (entry.name.toLowerCase() === name.toLowerCase()) {
-      return full
-    }
-  }
-  return null
-}
 
 // ---------------------------------------------------------------------------
 // post-install confirmation
