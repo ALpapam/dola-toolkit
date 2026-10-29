@@ -250,21 +250,58 @@ export function buildXrayConfig(node: ProxyNode, settings: ProxySettings): strin
   if (settings.routingMode !== 'global') {
     rules.push(
       { type: 'field', domain: ['geosite:cn', 'geosite:private'], outboundTag: 'direct' },
+      /*
+       * Everything known to be foreign goes to the node BY NAME, before any IP is
+       * resolved. The node resolves it from its own side, so no local DNS query leaves
+       * the machine for those domains — no pollution, and the CDN picks the node's
+       * region instead of ours.
+       */
+      { type: 'field', domain: ['geosite:geolocation-!cn'], outboundTag: 'proxy' },
       { type: 'field', ip: ['geoip:cn'], outboundTag: 'direct' }
     )
   }
 
-  const dnsServers = settings.remoteDns
-    ? ['1.1.1.1', '8.8.8.8', '223.5.5.5']
-    : ['223.5.5.5', '119.29.29.29']
+  /*
+   * QUIC (UDP 443) is dropped after the rules above have had their say, i.e. only for
+   * traffic that would be proxied. Most nodes relay UDP poorly, and a stalled QUIC
+   * handshake is what makes YouTube sit on a black frame; blocking it makes the browser
+   * fall back to TCP immediately, which is consistently faster through a proxy.
+   */
+  rules.push({ type: 'field', network: 'udp', port: 443, outboundTag: 'block' })
+
+  /*
+   * DNS stays domestic, on purpose.
+   *
+   * The old default (`remoteDns: true`) put 1.1.1.1 FIRST for every lookup, bilibili
+   * included. From mainland networks that resolver is lossy or blackholed, so pages
+   * stalled on their first DNS round trip, and its answers are geographically wrong —
+   * which made `geoip:cn` miss domestic CDNs and send CN traffic through the node.
+   * That is the whole story behind "bilibili needs loading, YouTube is slower".
+   *
+   * Foreign domains no longer need a local resolver at all: they are matched by domain
+   * and resolved by the node (see the geolocation-!cn rule below), which also removes
+   * any chance of a poisoned answer.
+   */
+  const dnsServers: unknown[] = settings.remoteDns
+    ? [
+        // encrypted but still domestic: no hijack, and the CDN answer stays correct
+        { address: 'https://dns.alidns.com/dns-query', domains: ['geosite:cn'], skipFallback: true },
+        { address: 'https://doh.pub/dns-query', domains: ['geosite:cn'], skipFallback: true },
+        { address: '223.5.5.5', skipFallback: true },
+        { address: '119.29.29.29' }
+      ]
+    : [
+        { address: '223.5.5.5', skipFallback: true },
+        { address: '119.29.29.29' }
+      ]
 
   const config = {
     log: { loglevel: settings.logLevel === 'debug' ? 'debug' : settings.logLevel === 'warn' ? 'warning' : settings.logLevel === 'error' ? 'error' : 'info' },
     dns: {
       servers: dnsServers,
       queryStrategy: settings.ipv6 ? 'UseIP' : 'UseIPv4',
-      disableFallback: false,
-      tag: 'dns-in'
+      // keep localhost names off the wire entirely
+      hosts: { 'domain:localhost': ['127.0.0.1'] }
     },
     inbounds: [
       {
@@ -491,21 +528,34 @@ export function buildSingBoxConfig(
     cnRuleSetTags.push('geoip-cn')
   }
 
-  const dnsServers: Record<string, unknown>[] = [{ type: 'udp', tag: 'local', server: '223.5.5.5' }]
-  if (settings.remoteDns) {
-    dnsServers.push({ type: 'https', tag: 'remote', server: '1.1.1.1', detour: 'proxy' })
-  }
   /*
-   * DNS split, the same idea as v2rayN:
-   *   bypass — CN domains resolve through the local resolver (fast, and getting
-   *            the geographically-best CDN node), everything else through DoH over
-   *            the tunnel so poisoned answers never reach us
-   *   global — everything through DoH over the tunnel
+   * Resolution stays domestic, and it is the DEFAULT rather than an exception.
+   *
+   * Previously every name that was not in the CN list was resolved through DoH over the
+   * tunnel (`dns.final: 'remote'`), so a bilibili lookup that missed the list waited for
+   * a round trip through the node before the connection could even start — measured at
+   * 1.5 s versus 0.19 s direct.
+   *
+   * Foreign destinations do not need a local answer at all: the proxy outbound receives
+   * the domain and lets the node resolve it, so a poisoned local answer can never be
+   * used. What the local resolver IS needed for is deciding "is this CN?", which is
+   * exactly what it is good at.
    */
-  const dnsRules: Record<string, unknown>[] = []
-  if (useRuleSets && settings.remoteDns && ruleSets.geosite) {
-    dnsRules.push({ rule_set: 'geosite-cn', server: 'local' })
+  const dnsServers: Record<string, unknown>[] = [
+    // the plain resolver doubles as the bootstrap for the encrypted one below
+    { type: 'udp', tag: 'local', server: '223.5.5.5' },
+    { type: 'udp', tag: 'local2', server: '119.29.29.29' }
+  ]
+  if (settings.remoteDns) {
+    // still domestic — just encrypted, so a local hijack cannot rewrite the answer
+    dnsServers.push({
+      type: 'https',
+      tag: 'local-doh',
+      server: 'dns.alidns.com',
+      domain_resolver: 'local'
+    })
   }
+  const dnsRules: Record<string, unknown>[] = []
 
   const routeRules: Record<string, unknown>[] = [
     ...(settings.sniffing
@@ -513,7 +563,25 @@ export function buildSingBoxConfig(
       : []),
     { ip_is_private: true, outbound: 'direct' },
     // CN traffic leaves directly, so domestic sites are not routed abroad
-    ...(useRuleSets && cnRuleSetTags.length ? [{ rule_set: cnRuleSetTags, outbound: 'direct' }] : [])
+    ...(useRuleSets && cnRuleSetTags.length ? [{ rule_set: cnRuleSetTags, outbound: 'direct' }] : []),
+    /*
+     * Everything NOT in the CN list goes to the node BY NAME, before any IP rule can
+     * force a local lookup.
+     *
+     * Without this the `geoip-cn` rule below resolved foreign domains with the local
+     * resolver, and a poisoned answer (youtube.com → a CN address) made it look domestic
+     * and route directly, which simply failed. Matching on the name avoids resolving at
+     * all: the node receives the domain and resolves it on its own side.
+     */
+    ...(useRuleSets && ruleSets.geosite
+      ? [{ rule_set: ['geosite-cn'], invert: true, outbound: 'proxy' }]
+      : []),
+    /*
+     * Drop QUIC after the direct rules (first match wins, so this only catches traffic
+     * that would have been proxied). Node relay of UDP 443 is the usual reason a video
+     * sits on a black frame; browsers fall back to TCP instantly.
+     */
+    { network: 'udp', port: [443], action: 'reject' }
   ]
 
   const config = {
@@ -524,7 +592,7 @@ export function buildSingBoxConfig(
     dns: {
       servers: dnsServers,
       rules: dnsRules,
-      final: settings.remoteDns ? 'remote' : 'local',
+      final: settings.remoteDns ? 'local-doh' : 'local',
       strategy: settings.ipv6 ? 'prefer_ipv4' : 'ipv4_only'
     },
     inbounds: [
@@ -546,7 +614,9 @@ export function buildSingBoxConfig(
       rule_set: ruleSetDefs,
       final: 'proxy',
       auto_detect_interface: true,
-      default_domain_resolver: settings.remoteDns ? 'remote' : 'local'
+      // rule matching resolves locally; proxied connections still hand the domain to
+      // the node, so this cannot leak a poisoned answer to a foreign site
+      default_domain_resolver: 'local'
     },
     experimental: {
       cache_file: { enabled: false },
@@ -705,6 +775,12 @@ function mihomoProxy(n: ProxyNode): YamlMap {
       p.password = yamlStr(n.password)
       p.sni = yamlStr(sni)
       p['skip-cert-verify'] = false
+      /*
+       * Nodes that pin a certificate (pinSHA256) otherwise fail TLS verification
+       * outright, so every proxied request errors out. mihomo calls the pinned hash
+       * `fingerprint`.
+       */
+      if (str(n.pinSHA256)) p.fingerprint = yamlStr(str(n.pinSHA256).toLowerCase())
       delete p.udp
       if (str(n.obfs)) {
         p.obfs = yamlStr(n.obfs)
@@ -800,7 +876,11 @@ export function buildMihomoConfig(node: ProxyNode, settings: ProxySettings): str
       fallback: settings.remoteDns
         ? ['https://1.1.1.1/dns-query', 'https://dns.google/dns-query'].map((s) => yamlStr(s))
         : [],
-      'fallback-filter': { geoip: true, 'geoip-code': 'CN' }
+      'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
+      // CN names never leave for a foreign resolver, so CDN answers stay local
+      'nameserver-policy': {
+        'geosite:cn': ['223.5.5.5', '119.29.29.29']
+      }
     },
     proxies: [proxy],
     'proxy-groups': [
@@ -823,6 +903,8 @@ export function buildMihomoConfig(node: ProxyNode, settings: ProxySettings): str
       ...(settings.routingMode !== 'global'
         ? ['GEOSITE,cn,DIRECT', 'GEOIP,CN,DIRECT', 'GEOSITE,private,DIRECT']
         : []),
+      // proxied QUIC is slower than the TCP fallback on most nodes
+      'AND,((NETWORK,udp),(DST-PORT,443)),REJECT',
       'MATCH,PROXY'
     ]
   }
@@ -888,27 +970,35 @@ export function configFileName(engine: CoreId): string {
 }
 
 /** argv for a foreground run; the first element is the subcommand when needed. */
-export function startArgs(engine: CoreId, configPath: string): string[] {
+export function startArgs(engine: CoreId, configPath: string, homeDir?: string): string[] {
   switch (engine) {
     case 'xray':
       return ['run', '-c', configPath]
     case 'singbox':
       return ['run', '-c', configPath, '--disable-color']
     case 'mihomo':
-      return ['-f', configPath]
+      /*
+       * `-d` matters: without it mihomo uses its global home (~/.config/mihomo), so it
+       * could not see the GeoIP.dat / Geosite.dat that bootstrapGeo puts next to the
+       * config, and tried to download and then delete files in the user profile — which
+       * failed and aborted the start with "can't remove invalid GeoIP.dat".
+       */
+      return homeDir ? ['-d', homeDir, '-f', configPath] : ['-f', configPath]
     default:
       return ['-c', configPath]
   }
 }
 
-export function testArgs(engine: CoreId, configPath: string): string[] {
+export function testArgs(engine: CoreId, configPath: string, homeDir?: string): string[] {
   switch (engine) {
     case 'xray':
       return ['run', '-test', '-c', configPath]
     case 'singbox':
       return ['check', '-c', configPath, '--disable-color']
     case 'mihomo':
-      return ['-t', '-f', configPath]
+      // the same `-d` as startArgs: validation must resolve its geo assets identically,
+      // otherwise `-t` reports an error the real run would not hit (or vice versa)
+      return homeDir ? ['-d', homeDir, '-t', '-f', configPath] : ['-t', '-f', configPath]
     default:
       return ['-t', '-f', configPath]
   }

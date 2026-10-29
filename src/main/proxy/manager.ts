@@ -17,7 +17,7 @@ import {
 } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { connect } from 'node:net'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { app, dialog } from 'electron'
 import type {
   CoreId,
@@ -46,6 +46,8 @@ import {
   clearBinaryCache,
   coreRoots,
   findCore,
+  engineSupports,
+  enginesFor,
   findGeo,
   geoDir,
   geoFileInfo,
@@ -446,6 +448,24 @@ export class ProxyManager {
     if (this.selectedNodeId !== node.id) this.selectedNodeId = node.id
     this.activeEngine = engine
 
+    /*
+     * Refuse a node this engine cannot actually run.
+     *
+     * Xray has no Hysteria2 / TUIC support, yet start() used to build a config with a
+     * fallback outbound and report "running": the proxy looked healthy while nothing
+     * went through it. Reporting the mismatch (and naming a core that does work) is far
+     * better than a silent black hole.
+     */
+    if (!engineSupports(engine, node.protocol)) {
+      const alternatives = enginesFor(node.protocol).filter((e) => findCore(e) !== null)
+      const suggest = alternatives.length
+        ? `请把该节点的内核改为 ${alternatives.map((e) => CORE_LABELS[e]).join(' 或 ')}`
+        : '当前没有可用的内核支持该协议'
+      const msg = `${CORE_LABELS[engine]} 不支持 ${node.protocol.toUpperCase()} 节点，${suggest}`
+      this.fail(engine, msg)
+      return this.statusOf(engine)
+    }
+
     // only one core at a time
     for (const other of ['xray', 'singbox', 'mihomo'] as CoreId[]) {
       if (other !== engine && this.running.get(other)?.child) await this.stopEngine(other)
@@ -522,6 +542,9 @@ export class ProxyManager {
     run.configPath = cfgPath
 
     // pre-flight: let the core validate the config before we spawn it for real
+    // mihomo needs its .dat assets for `-t` too; without them it downloads (and times
+    // out) during validation, before it ever gets to start
+    this.bootstrapGeo(engine, dir)
     const check = await this.validateConfig(engine, cfgPath)
     if (!check.ok) {
       const msg = check.message || '配置校验失败'
@@ -531,9 +554,7 @@ export class ProxyManager {
       return this.statusOf(engine)
     }
 
-    this.bootstrapGeo(engine, dir)
-
-    const args = startArgs(engine, cfgPath)
+    const args = startArgs(engine, cfgPath, dir)
     const env: NodeJS.ProcessEnv = { ...process.env }
     if (engine === 'xray') {
       const geo = findGeo()
@@ -807,6 +828,7 @@ export class ProxyManager {
       if (!bin) return resolve({ ok: false, message: '核心文件缺失' })
       const env: NodeJS.ProcessEnv = { ...process.env }
       if (engine === 'xray') Object.assign(env, xrayGeoEnv(findGeo().dir))
+      const homeDir = dirname(cfgPath)
       let out = ''
       let settled = false
       const done = (ok: boolean, message = ''): void => {
@@ -815,7 +837,7 @@ export class ProxyManager {
         resolve({ ok, message })
       }
       try {
-        const child = spawn(bin, testArgs(engine, cfgPath), {
+        const child = spawn(bin, testArgs(engine, cfgPath, homeDir), {
           cwd: join(bin, '..'),
           windowsHide: true,
           env,
@@ -846,11 +868,14 @@ export class ProxyManager {
       const geo = findGeo()
       for (const name of ['geoip.dat', 'geosite.dat'] as const) {
         const target = join(dir, name)
-        if (existsSync(target)) continue
         const from = name === 'geoip.dat' ? geo.geoip : geo.geosite
-        if (from && existsSync(from)) {
-          writeFileSync(target, readFileSync(from))
-        }
+        if (!from || !existsSync(from)) continue
+        // a half-downloaded file from an earlier failed start would otherwise be kept
+        // forever and make mihomo try to fetch it again
+        const existing = existsSync(target) ? statSync(target).size : 0
+        const real = statSync(from).size
+        if (existing >= real) continue
+        writeFileSync(target, readFileSync(from))
       }
     } catch {
       /* mihomo will download or warn; not fatal */
@@ -1107,7 +1132,7 @@ export class ProxyManager {
       const env: NodeJS.ProcessEnv = { ...process.env }
       if (engine === 'xray') Object.assign(env, xrayGeoEnv(findGeo().dir))
       try {
-        tempChild = spawn(bin, startArgs(engine, cfgPath), {
+        tempChild = spawn(bin, startArgs(engine, cfgPath, tempDir), {
           cwd: engine === 'mihomo' ? tempDir : join(bin, '..'),
           windowsHide: true,
           env,

@@ -30,6 +30,17 @@ export const CORE_LABELS: Record<CoreId, string> = {
   singbox: 'sing-box'
 }
 
+/** True when `engine` can actually run this protocol. */
+export function engineSupports(engine: CoreId, protocol: NodeProtocol): boolean {
+  return CAPABILITIES[engine]?.includes(protocol) ?? false
+}
+
+/** Engines that can run this protocol, best first. */
+export function enginesFor(protocol: NodeProtocol): CoreId[] {
+  const order: CoreId[] = ['singbox', 'mihomo', 'xray']
+  return order.filter((e) => engineSupports(e, protocol))
+}
+
 const CAPABILITIES: Record<CoreId, NodeProtocol[]> = {
   xray: ['vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http'],
   singbox: [
