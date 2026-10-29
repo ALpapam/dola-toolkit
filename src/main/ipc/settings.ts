@@ -4,6 +4,7 @@
 
 import { app, ipcMain, nativeTheme } from 'electron'
 import { IPC } from '@shared/channels'
+import { proxyCall } from '../modService'
 import type { Settings, SettingsPatch } from '@shared/types'
 import { getSettings, patchSettings, resetSettings } from '../store'
 import { broadcast, getMainWindow, setWindowBackground } from '../window'
@@ -47,8 +48,7 @@ export function registerSettingsIpc(): void {
 
     // Proxy settings must be pushed to the running core (listen address, port…).
     try {
-      const { proxyManager } = await import('../proxy/manager')
-      await proxyManager.applySettingsChange(before.proxy, next.proxy)
+      await proxyCall('apply-settings', before.proxy, next.proxy)
     } catch {
       /* proxy subsystem must never break a settings write */
     }

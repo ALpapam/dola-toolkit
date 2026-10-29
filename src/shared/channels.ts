@@ -46,6 +46,9 @@ export const IPC = {
   modOpenFolder: 'mod:open-folder',
   /** pushed to renderers whenever the installed set changes */
   modChanged: 'mod:changed',
+  /** generic bridge to a mod's main-process service */
+  modInvoke: 'mod:invoke',
+  modEvent: 'mod:event',
   appOpenExternal: 'app:open-external',
   appShowItem: 'app:show-item',
   appCapture: 'app:capture',

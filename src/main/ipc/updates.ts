@@ -28,7 +28,7 @@ import {
 import { readStagedCores, stageCore, writeStagedCores } from '../coreStage'
 import { logUpdate, revealUpdateLog, updateLogPath } from '../updateLog'
 import { markResumeProxyAfterRestart, relaunchApp } from '../resume'
-import { proxyManager } from '../proxy/manager'
+import { proxyCall } from '../modService'
 
 function emit(progress: UpdateProgress): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -42,7 +42,7 @@ function scheduleRelaunch(delayMs = 1800): void {
   relaunchTimer = setTimeout(() => {
     relaunchTimer = null
     void relaunchApp(async () => {
-      await proxyManager.stop()
+      await proxyCall('stop')
     }, 0)
   }, delayMs)
 }
@@ -207,11 +207,12 @@ export function registerUpdatesIpc(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IPC.updateApplyStagedNow, () => {
+  ipcMain.handle(IPC.updateApplyStagedNow, async () => {
     const staged = readStagedCores()
     if (staged.length === 0) return { ok: false, error: '没有待应用的内核' }
     // remember whether the proxy was up so the relaunch brings it back
-    const wasUp = proxyManager.state().engines.some((e) => e.running)
+    const port = await proxyCall<number | null>('active-port')
+    const wasUp = port !== null
     markResumeProxyAfterRestart(wasUp)
     logUpdate('core.apply.restart-requested', staged.map((s) => `${s.label} ${s.version}`).join(', '))
     scheduleRelaunch(400)

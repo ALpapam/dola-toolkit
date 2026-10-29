@@ -10,7 +10,8 @@ import { app, BrowserWindow, Menu, Tray, nativeImage, type NativeImage } from 'e
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { getMainWindow, showMainWindow } from './window'
-import { proxyManager } from './proxy/manager'
+import { proxyCall, modServices } from './modService'
+import type { ProxyState } from '@shared/types'
 
 let tray: Tray | null = null
 /** signature of what the menu currently shows, to skip pointless rebuilds */
@@ -40,7 +41,8 @@ function trayIcon(): NativeImage {
 /** One-line proxy summary for the menu, so state is visible without opening it. */
 function proxySummary(): string {
   try {
-    const state = proxyManager.state()
+    const state = cachedProxyState
+    if (!state) return '代理：状态未知'
     const running = state.engines.find((e) => e.running)
     if (running) {
       const node = state.nodes.find((n) => n.id === state.selectedNodeId)
@@ -56,11 +58,27 @@ function proxySummary(): string {
  * Rebuilds the context menu. Called on every state change because Electron
  * menus are immutable once attached.
  */
+/**
+ * Latest proxy state, kept in sync by the mod's broadcast.
+ *
+ * The tray renders synchronously (Electron menus cannot be built asynchronously), so the
+ * state is cached here rather than awaited on every rebuild.
+ */
+let cachedProxyState: ProxyState | null = null
+
+/** Subscribes the tray cache to the proxy mod. Called once at boot. */
+export function trackProxyState(): void {
+  modServices.subscribe('proxy', 'state-changed', (payload) => {
+    if (payload && typeof payload === 'object') cachedProxyState = payload as ProxyState
+    refreshTrayMenu()
+  })
+}
+
 export function refreshTrayMenu(force = false): void {
   if (!tray) return
   const running = ((): boolean => {
     try {
-      return proxyManager.state().engines.some((e) => e.running)
+      return cachedProxyState?.engines.some((e) => e.running) ?? false
     } catch {
       return false
     }
@@ -91,8 +109,7 @@ export function refreshTrayMenu(force = false): void {
         click: () => {
           void (async () => {
             try {
-              if (running) await proxyManager.stop()
-              else await proxyManager.start()
+              await proxyCall('toggle')
             } catch {
               /* the window shows the failure; ignore here */
             }

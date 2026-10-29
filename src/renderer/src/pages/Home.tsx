@@ -69,7 +69,11 @@ export function HomePage(): JSX.Element {
 
   useEffect(() => {
     const load = (): void => {
-      void window.api.proxy.state().then(setProxy).catch(() => undefined)
+      // the proxy is a mod service now: the core only asks through the generic bridge
+      void window.api.mod
+        .invoke<ProxyState>('proxy', 'state')
+        .then(setProxy)
+        .catch(() => undefined)
       void window.api.ai.status().then(setAi).catch(() => undefined)
       void window.api.sync.status().then(setSync).catch(() => undefined)
     }

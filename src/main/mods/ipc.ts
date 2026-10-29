@@ -3,7 +3,10 @@
 // ---------------------------------------------------------------------------
 
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app } from 'electron'
+import { join } from 'node:path'
 import { IPC } from '@shared/channels'
+import { modServices } from '../modService'
 import {
   importModFromZip,
   listMods,
@@ -27,7 +30,11 @@ export function registerModsIpc(): void {
   ipcMain.handle(IPC.modImportZip, async (_e, zipPath: unknown) => {
     if (typeof zipPath !== 'string' || !zipPath) return { ok: false, error: '缺少插件包路径' }
     const result = await importModFromZip(zipPath)
-    if (result.ok) broadcast()
+    if (result.ok) {
+      // a plugin may ship a main-process service; load it now, not on next launch
+      await modServices.loadOne(join(app.getPath('userData'), 'mods'), result.mod!.id)
+      broadcast()
+    }
     return result
   })
 
@@ -40,14 +47,20 @@ export function registerModsIpc(): void {
     })
     if (picked.canceled || picked.filePaths.length === 0) return { ok: false, canceled: true }
     const result = await importModFromZip(picked.filePaths[0])
-    if (result.ok) broadcast()
+    if (result.ok) {
+      await modServices.loadOne(join(app.getPath('userData'), 'mods'), result.mod!.id)
+      broadcast()
+    }
     return result
   })
 
   ipcMain.handle(IPC.modUninstall, (_e, id: unknown) => {
     if (typeof id !== 'string') return { ok: false, error: '缺少插件 id' }
     const result = uninstallMod(id)
-    if (result.ok) broadcast()
+    if (result.ok) {
+      modServices.unload(id)
+      broadcast()
+    }
     return result
   })
 
