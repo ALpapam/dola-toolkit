@@ -7,6 +7,8 @@ import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
 import './styles/pages.css'
+// expressive layer loads last so it can retune the whole visual language
+import './styles/expressive.css'
 
 // must run before any mod can be mounted
 installHostBridge(APP_VERSION)

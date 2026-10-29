@@ -111,6 +111,8 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  /* 深色下不要那层粉色，改为轻微压暗，避免偏红 */
+  --dola-bg: color-mix(in srgb, var(--md-background) 92%, #2a1520);
 }
 
 /* Reduced motion */

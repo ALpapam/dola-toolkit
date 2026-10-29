@@ -1,0 +1,602 @@
+/* ---------------------------------------------------------------------------
+   Dola Toolkit — Expressive 视觉层
+   
+   这一层在 tokens/base/components/pages 之后加载，用来把整套界面统一到
+   Material 3 Expressive 的语言上（参考 Android 官方的 mobile 设计规范，
+   以及 Kazumi 那种“大圆角 + 色块 + 少线条”的观感）。
+
+   设计约束：
+   · 只用色块与层级表达结构，尽量不再用 1px 描边；
+   · 圆角整体放大（卡片 28、控件 20、药丸全圆），控件高度加大到 40/48；
+   · 字阶拉开层级：标题 22-28，正文 13.5-14，辅助 12；
+   · 所有过渡统一到 M3 的 standard / emphasized 曲线；
+   · 不改变任何布局结构，避免影响拖动、滚动与插件的挂载。
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* 更大的形状刻度 */
+  --shape-xs: 6px;
+  --shape-sm: 10px;
+  --shape-md: 16px;
+  --shape-lg: 22px;
+  --shape-xl: 28px;
+  --shape-2xl: 34px;
+  --shape-full: 999px;
+
+  /* 控件高度 */
+  --ctl-h: 40px;
+  --ctl-h-lg: 48px;
+
+  /* 只用于悬浮物的柔和阴影，静态面板一律用面色区分 */
+  --elev-1: 0 1px 2px rgb(0 0 0 / 10%), 0 1px 3px 1px rgb(0 0 0 / 6%);
+  --elev-2: 0 2px 6px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 8%);
+  --elev-3: 0 10px 24px rgb(0 0 0 / 18%), 0 3px 8px rgb(0 0 0 / 10%);
+
+  /* 滚动条 */
+  --scroll-thumb: color-mix(in srgb, var(--md-on-surface) 22%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* 排版：拉开层级                                                      */
+/* ------------------------------------------------------------------ */
+
+body {
+  font-size: 14px;
+  letter-spacing: 0.1px;
+}
+
+strong,
+.strong {
+  font-weight: 650;
+}
+
+/* ------------------------------------------------------------------ */
+/* 侧边栏：药丸选中态 + 更宽的行距                                       */
+/* ------------------------------------------------------------------ */
+
+.rail {
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+  gap: 2px;
+  background: var(--md-surface-container);
+  /* 用极淡的色差代替描边来分隔侧边栏与内容区 */
+  box-shadow: none;
+  border-right: none;
+}
+
+.rail-item,
+.rail-expand-btn {
+  height: 56px;
+  border-radius: var(--shape-lg);
+  color: var(--md-on-surface-variant);
+  transition:
+    background-color var(--dur-2) var(--ease-standard),
+    color var(--dur-2) var(--ease-standard),
+    transform var(--dur-2) var(--ease-standard);
+}
+
+.rail-item:hover,
+.rail-expand-btn:hover {
+  background: color-mix(in srgb, var(--md-on-surface) 7%, transparent);
+}
+
+/* 选中项：整行铺色调容器，而不是一条细高亮 */
+.rail-item.active {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  font-weight: 650;
+}
+
+.rail-item.active:hover {
+  background: color-mix(in srgb, var(--md-primary-container) 88%, var(--md-on-primary-container));
+}
+
+.rail-item-icon {
+  transition: transform var(--dur-2) var(--ease-emphasized);
+}
+
+.rail-item:active .rail-item-icon {
+  transform: scale(0.92);
+}
+
+/* 拖动中的那一枚：抬起并有阴影，其它图标不带阴影 */
+.rail-item.dragging {
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--elev-3);
+  opacity: 1;
+  transform-origin: center;
+}
+
+.rail-add {
+  color: var(--md-primary);
+  font-weight: 600;
+}
+
+.rail-add.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.rail-item-pinned.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.rail-scroll {
+  gap: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 标题栏                                                             */
+/* ------------------------------------------------------------------ */
+
+.titlebar {
+  padding: 0 var(--sp-2) 0 var(--sp-5);
+  background: var(--dola-bg);
+  box-shadow: none;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.titlebar-title .strong {
+  font-weight: 700;
+}
+
+.titlebar-title .crumb {
+  opacity: 0.55;
+}
+
+.win-btn {
+  border-radius: var(--shape-full);
+}
+
+/* ------------------------------------------------------------------ */
+/* 按钮                                                               */
+/* ------------------------------------------------------------------ */
+
+.btn {
+  min-height: var(--ctl-h);
+  padding: 0 20px;
+  border-radius: var(--shape-full);
+  font-size: 13.5px;
+  font-weight: 620;
+  letter-spacing: 0.2px;
+  transition:
+    background-color var(--dur-2) var(--ease-standard),
+    color var(--dur-2) var(--ease-standard),
+    transform var(--dur-1) var(--ease-standard),
+    box-shadow var(--dur-2) var(--ease-standard);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.btn-xs {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.btn-icon {
+  border-radius: var(--shape-full);
+}
+
+.btn-filled {
+  box-shadow: none;
+}
+
+.btn-outlined {
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--md-outline) 55%, transparent);
+}
+
+.btn-tonal {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+/* ------------------------------------------------------------------ */
+/* 卡片与列表：色块化，圆角放大                                          */
+/* ------------------------------------------------------------------ */
+
+.set-card {
+  border: none;
+  border-radius: var(--shape-xl);
+  background: var(--md-surface-container);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.set-card + .set-card {
+  margin-top: var(--sp-3);
+}
+
+.set-item {
+  padding: 16px var(--sp-5);
+}
+
+.set-item + .set-item {
+  border-top: 1px solid color-mix(in srgb, var(--md-outline-variant) 26%, transparent);
+}
+
+.set-section-title {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.1px;
+  /* the settings content is a flex column, so an inline-flex heading still stretches;
+     fit-content keeps the tinted chip around the text only */
+  align-self: flex-start;
+  width: fit-content;
+  padding: 7px 16px 7px 12px;
+  border-radius: var(--shape-full);
+  background: color-mix(in srgb, var(--md-primary) 13%, transparent);
+  color: var(--md-on-surface);
+}
+
+.set-section-title .icon {
+  color: var(--md-primary);
+}
+
+.set-section-desc {
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+/* ------------------------------------------------------------------ */
+/* 对话框                                                             */
+/* ------------------------------------------------------------------ */
+
+.dialog {
+  border-radius: var(--shape-2xl);
+  border: none;
+  box-shadow: var(--elev-3);
+  background: var(--md-surface-container-high);
+}
+
+.dialog-head {
+  padding: var(--sp-5) var(--sp-5) var(--sp-2);
+}
+
+.dialog-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+
+.dialog-subtitle {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.dialog-body {
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.dialog-footer {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  gap: var(--sp-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* 输入控件                                                           */
+/* ------------------------------------------------------------------ */
+
+.text-input,
+.select-trigger,
+.segmented {
+  border-radius: var(--shape-md);
+}
+
+.text-input input,
+.select-trigger {
+  min-height: var(--ctl-h);
+}
+
+.segmented {
+  padding: 3px;
+  background: var(--md-surface-container-high);
+}
+
+.segmented button {
+  border-radius: calc(var(--shape-md) - 3px);
+  min-height: calc(var(--ctl-h) - 6px);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* 药丸芯片 */
+.chip {
+  border-radius: var(--shape-full);
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: none;
+  background: var(--md-surface-container-high);
+}
+
+.chip.active,
+.chip[aria-pressed='true'] {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+/* ------------------------------------------------------------------ */
+/* 主菜单                                                             */
+/* ------------------------------------------------------------------ */
+
+.home-scroll {
+  scrollbar-width: none;
+}
+
+.home-greeting {
+  /* 这一行包含 ゜ ▽ 等符号：自定义字体（默认是 JetBrains Maple Mono NF）声明了
+     较宽的字符覆盖却缺少这些字形，会渲染成方框而不是回退到系统字体。
+     欢迎语是展示性文字，直接用系统字体栈最稳。 */
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.3;
+}
+
+.home-logo {
+  width: 112px;
+  height: 112px;
+  border-radius: var(--shape-2xl);
+  box-shadow: var(--elev-2);
+}
+
+.home-welcome-inner {
+  gap: var(--sp-6);
+}
+
+.home-page-title {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.2px;
+}
+
+.home-page-head {
+  padding-bottom: var(--sp-5);
+}
+
+.home-chevron {
+  width: 46px;
+  height: 32px;
+  border-radius: var(--shape-full);
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface-variant);
+}
+
+.shortcut {
+  border-radius: var(--shape-xl);
+  padding: 12px 6px;
+}
+
+.shortcut-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: var(--shape-lg);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  box-shadow: var(--elev-1);
+  transition: transform var(--dur-2) var(--ease-emphasized);
+}
+
+.shortcut:hover .shortcut-icon {
+  transform: translateY(-2px);
+}
+
+.shortcut:active .shortcut-icon {
+  transform: scale(0.94);
+}
+
+.shortcut.dragging .shortcut-icon {
+  box-shadow: var(--elev-3);
+}
+
+.shortcut-label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.shortcut-add .shortcut-icon {
+  background: var(--md-surface-container-highest);
+  color: var(--md-primary);
+  box-shadow: none;
+}
+
+/* 状态卡片 */
+.status-row {
+  border-radius: var(--shape-lg);
+  padding: 16px var(--sp-4);
+  background: var(--md-surface-container);
+  transition:
+    background-color var(--dur-2) var(--ease-standard),
+    transform var(--dur-1) var(--ease-standard);
+}
+
+.status-row:hover {
+  background: var(--md-surface-container-high);
+}
+
+.status-row:active {
+  transform: scale(0.995);
+}
+
+.status-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-value {
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 设置页                                                             */
+/* ------------------------------------------------------------------ */
+
+.set-nav-item {
+  border-radius: var(--shape-full);
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.set-nav-item.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+/* 工具列表 */
+.tools-card {
+  border-radius: var(--shape-xl);
+  padding: var(--sp-2) var(--sp-4);
+}
+
+.tools-row {
+  border-radius: var(--shape-lg);
+  padding: 14px var(--sp-2);
+}
+
+.tools-row.divided {
+  border-top: none;
+}
+
+.tools-row-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--shape-md);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+
+.tools-row-name {
+  font-size: 14.5px;
+}
+
+/* 同步列表 */
+.sync-row {
+  border-radius: var(--shape-md);
+  padding: 11px var(--sp-3) 11px 0;
+}
+
+.sync-row-name {
+  font-size: 13.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 插件页                                                            */
+/* ------------------------------------------------------------------ */
+
+.mod-page {
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* 滚动条：细、圆、低对比                                               */
+/* ------------------------------------------------------------------ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: var(--shape-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  background-color: var(--scroll-thumb);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--md-on-surface) 34%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* 焦点可见性                                                          */
+/* ------------------------------------------------------------------ */
+
+:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 尊重系统的“减少动态效果”                                             */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-item,
+  .rail-slot,
+  .shortcut,
+  .shortcut-icon,
+  .btn,
+  .status-row {
+    transition: none;
+  }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* 面板：带一点点主色的中性底，和背景拉开层次                            */
+/* ------------------------------------------------------------------ */
+
+.set-card,
+.tools-card,
+.status-row {
+  background: color-mix(in srgb, var(--md-surface-container) 90%, var(--md-primary) 10%);
+}
+
+.set-card:hover,
+.tools-card:hover {
+  background: color-mix(in srgb, var(--md-surface-container) 86%, var(--md-primary) 14%);
+}
+
+/* 工具行里的三个操作按钮离卡片右缘留出距离 */
+.tools-row-actions {
+  padding-right: var(--sp-2);
+}
+
+/* 欢迎页：logo 后面一层极淡的光晕，避免整页过空 */
+.home-welcome::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 520px;
+  height: 520px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--md-primary) 16%, transparent) 0%,
+    transparent 68%
+  );
+  pointer-events: none;
+}
+
+.home-welcome-inner {
+  position: relative;
+}
+
+/* 图标容器强制正方形，避免被 flex 拉扁 */
+.tools-row-icon,
+.shortcut-icon {
+  aspect-ratio: 1 / 1;
+}
