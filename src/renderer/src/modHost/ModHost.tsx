@@ -122,8 +122,21 @@ export function ModHost({ mod, mode = 'tool' }: Props): JSX.Element {
     }
   }, [mod.id, mod.version, mode])
 
+  /*
+   * In a settings page the mod must size to its CONTENT, not to the viewport.
+   *
+   * `.mod-page` is `height: 100%; overflow: hidden`, which is right for a tool (it manages
+   * its own inner scrolling) but wrong inside the settings scroller: the content was
+   * clipped to the pane instead of making it overflow, so `scrollHeight` equalled
+   * `clientHeight` and the wheel had nothing to move.
+   */
+  const fill = mode !== 'settings'
+
   return (
-    <div className="mod-page" style={{ height: '100%', minHeight: 0, position: 'relative' }}>
+    <div
+      className="mod-page"
+      style={fill ? { height: '100%', minHeight: 0, position: 'relative' } : { position: 'relative' }}
+    >
       {loading ? (
         <div className="hstack" style={{ gap: 10, padding: 24, justifyContent: 'center' }}>
           <Spinner size={18} />
@@ -146,7 +159,11 @@ export function ModHost({ mod, mode = 'tool' }: Props): JSX.Element {
       */}
       <div
         ref={containerRef}
-        style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        style={
+          fill
+            ? { flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }
+            : { display: 'block' }
+        }
       />
     </div>
   )
