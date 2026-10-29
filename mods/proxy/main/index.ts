@@ -16,10 +16,15 @@ import type {
   ProxySettings,
   ProxyState
 } from '@shared/types'
-import { proxyManagerRef, setProxyHost } from './manager'
+import { proxyManagerRef, setProxyHost, type ProxyManager } from './manager'
 
-/** the shared manager, resolved after the host was injected */
-const proxyManager = proxyManagerRef
+/**
+ * The shared manager.
+ *
+ * Resolved inside register() once the host has been injected — taking the function
+ * reference here would leave `proxyManager.onState` undefined.
+ */
+let proxyManager: ProxyManager
 
 let wired = false
 
@@ -36,7 +41,9 @@ function asCoreId(v: unknown): CoreId | null {
 }
 
 export function register(dola: ModHostApi): void {
+  const host = dola
   setProxyHost(dola)
+  proxyManager = proxyManagerRef()
   wireEvents(dola)
 
   host.ipc.handle('state', (): ProxyState => proxyManager.state())
@@ -49,17 +56,18 @@ export function register(dola: ModHostApi): void {
     }
   })
 
-  host.ipc.handle('save-node', (_e, draft: unknown): ProxyNode | null => {
+  host.ipc.handle('save-node', (draft: unknown): ProxyNode | null => {
     if (typeof draft !== 'object' || draft === null) return null
     const d = draft as Partial<ProxyNode> & { id?: string }
     try {
       return proxyManager.saveNode(d)
-    } catch {
+    } catch (e) {
+      host.log('error', `save-node: ${e instanceof Error ? e.stack : String(e)}`)
       return null
     }
   })
 
-  host.ipc.handle('delete-node', (_e, id: unknown): void => {
+  host.ipc.handle('delete-node', (id: unknown): void => {
     if (typeof id !== 'string' || !id) return
     try {
       proxyManager.deleteNode(id)
@@ -68,16 +76,17 @@ export function register(dola: ModHostApi): void {
     }
   })
 
-  host.ipc.handle('import-links', (_e, text: unknown): ImportLinksResult => {
+  host.ipc.handle('import-links', (text: unknown): ImportLinksResult => {
     if (typeof text !== 'string') return { added: [], failed: [] }
     try {
       return proxyManager.importLinks(text)
-    } catch {
+    } catch (e) {
+      host.log('error', `import-links: ${e instanceof Error ? e.stack : String(e)}`)
       return { added: [], failed: [{ link: '', reason: '导入失败' }] }
     }
   })
 
-  host.ipc.handle('select-node', (_e, id: unknown): ProxyState => {
+  host.ipc.handle('select-node', (id: unknown): ProxyState => {
     const nodeId = typeof id === 'string' && id ? id : null
     try {
       return proxyManager.selectNode(nodeId)
@@ -124,7 +133,7 @@ export function register(dola: ModHostApi): void {
     }
   })
 
-  host.ipc.handle('test-node', async (_e, id: unknown): Promise<NodeTestResult> => {
+  host.ipc.handle('test-node', async (id: unknown): Promise<NodeTestResult> => {
     const nodeId = typeof id === 'string' ? id : ''
     if (!nodeId) {
       return { nodeId: '', ok: false, delayMs: null, exitIp: null, country: null, error: '缺少节点 id' }
@@ -143,7 +152,7 @@ export function register(dola: ModHostApi): void {
     }
   })
 
-  host.ipc.handle('system-proxy', async (_e, on: unknown): Promise<boolean> => {
+  host.ipc.handle('system-proxy', async (on: unknown): Promise<boolean> => {
     try {
       return await proxyManager.setSystemProxy(on === true)
     } catch {
@@ -168,7 +177,7 @@ export function register(dola: ModHostApi): void {
     }
   })
 
-  host.ipc.handle('clear-logs', (_e, engine: unknown): void => {
+  host.ipc.handle('clear-logs', (engine: unknown): void => {
     const id = asCoreId(engine)
     if (!id) return
     try {
@@ -196,7 +205,7 @@ export function register(dola: ModHostApi): void {
     return running ? state.settings.mixedPort : null
   })
 
-  host.ipc.handle('apply-settings', async (_e, before: unknown, next: unknown): Promise<void> => {
+  host.ipc.handle('apply-settings', async (before: unknown, next: unknown): Promise<void> => {
     void before
     if (next && typeof next === 'object') await onProxySettingsChanged(next as ProxySettings)
   })

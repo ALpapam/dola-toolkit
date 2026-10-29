@@ -2144,7 +2144,6 @@ export function proxyManagerRef(): ProxyManager {
   return managerInstance
 }
 
-export { ProxyManager }
 
 export function isProxyManagerReady(): boolean {
   try {

@@ -82,22 +82,10 @@ export interface DolaToolkitApi {
     monet(force?: boolean): Promise<MonetResult>
     onChanged(cb: (m: MonetResult) => void): () => void
   }
-  proxy: {
-    state(): Promise<ProxyState>
-    engines(): Promise<EngineCapability[]>
-    saveNode(node: Partial<ProxyNode> & { id?: string }): Promise<ProxyNode>
-    deleteNode(id: string): Promise<void>
-    importLinks(text: string): Promise<ImportLinksResult>
-    selectNode(id: string | null): Promise<ProxyState>
-    start(): Promise<CoreStatus>
-    stop(): Promise<CoreStatus>
-    testNode(id: string): Promise<NodeTestResult>
-    setSystemProxy(on: boolean): Promise<boolean>
-    importGeo(): Promise<ProxyState>
-    updateGeo(): Promise<ProxyState>
-    clearLogs(engine: CoreId): Promise<void>
-    onState(cb: (s: ProxyState) => void): () => void
-    onLog(cb: (e: CoreLogEvent) => void): () => void
+  /** generic bridge to a mod's main-process service */
+  mod: {
+    invoke<T = unknown>(id: string, channel: string, ...args: unknown[]): Promise<T>
+    on(id: string, channel: string, cb: (payload: unknown) => void): () => void
   }
   library: {
     state(): Promise<LibraryState>

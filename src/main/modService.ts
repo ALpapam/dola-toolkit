@@ -129,26 +129,39 @@ class ModServiceHost {
       return
     }
 
-    for (const id of entries) {
-      const entry = this.mainEntry(modsRoot, id)
-      if (!existsSync(entry)) continue
-      try {
-        const mod = (await import(pathToFileURL(entry).href)) as {
-          register?: (api: ModHostApi) => void
-        }
-        const register = mod.register ?? (mod as { default?: { register?: (a: ModHostApi) => void } }).default?.register
-        if (typeof register !== 'function') {
-          console.warn(`[dola] mod "${id}" main bundle has no register() export, skipped`)
-          continue
-        }
-        const record: ServiceRecord = { id, handlers: new Map(), lifecycle: new Map() }
-        this.services.set(id, record)
-        register(this.apiFor(id, record))
-        console.log(`[dola] mod service "${id}" loaded (${record.handlers.size} handlers)`)
-      } catch (e) {
-        console.error(`[dola] mod service "${id}" failed to load:`, e)
+    for (const id of entries) await this.loadOne(modsRoot, id)
+  }
+
+  /**
+   * Loads a single mod's main bundle.
+   *
+   * Called at boot for everything installed AND right after a plugin is installed: a
+   * feature that ships a main service must start working without restarting the app.
+   */
+  async loadOne(modsRoot: string, id: string): Promise<void> {
+    const entry = this.mainEntry(modsRoot, id)
+    if (!existsSync(entry)) return
+    try {
+      const mod = (await import(pathToFileURL(entry).href)) as {
+        register?: (api: ModHostApi) => void
       }
+      const register = mod.register ?? (mod as { default?: { register?: (a: ModHostApi) => void } }).default?.register
+      if (typeof register !== 'function') {
+        console.warn(`[dola] mod "${id}" main bundle has no register() export, skipped`)
+        return
+      }
+      const record: ServiceRecord = { id, handlers: new Map(), lifecycle: new Map() }
+      this.services.set(id, record)
+      register(this.apiFor(id, record))
+      console.log(`[dola] mod service "${id}" loaded (${record.handlers.size} handlers)`)
+    } catch (e) {
+      console.error(`[dola] mod service "${id}" failed to load:`, e)
     }
+  }
+
+  /** Drops a service: its handlers stop resolving (used on uninstall). */
+  unload(id: string): void {
+    this.services.delete(id)
   }
 
   private apiFor(id: string, record: ServiceRecord): ModHostApi {
