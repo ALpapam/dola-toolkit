@@ -22,7 +22,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { existsSync as fsExists, mkdirSync as fsMkdir, readFileSync as fsRead, rmSync as fsRm, writeFileSync as fsWrite } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import type { DeepPartial, Settings } from '@shared/types'
 import { getSettings, patchSettings } from './store'
 
@@ -95,6 +95,35 @@ export function proxyCall<T = unknown>(channel: string, ...args: unknown[]): Pro
   return modServices.invoke('proxy', channel, ...args) as Promise<T>
 }
 
+/** require() a module after evicting it (and its children) from the cache. */
+function loadFresh(entry: string): unknown {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  /*
+   * Base the require on the app root, not `__filename`: in the bundled main process the
+   * latter resolved to "<project>\electron", so `require('electron')` inside the plugin
+   * threw ENOENT and the service failed to register.
+   */
+  const req = createRequire(join(app.getAppPath(), 'package.json'))
+  try {
+    const resolved = req.resolve(entry)
+    const cached = req.cache?.[resolved]
+    if (cached) {
+      for (const child of cached.children ?? []) {
+        try {
+          delete req.cache?.[child.id]
+        } catch {
+          /* ignore */
+        }
+      }
+      delete req.cache?.[resolved]
+    }
+    return req(resolved)
+  } catch (e) {
+    console.error('[dola] loadFresh failed, falling back to import():', e)
+    return {}
+  }
+}
+
 class ModServiceHost {
   private services = new Map<string, ServiceRecord>()
   /** core-side subscribers for mod broadcasts */
@@ -135,10 +164,17 @@ class ModServiceHost {
     const entry = this.mainEntry(modsRoot, id)
     if (!existsSync(entry)) return
     try {
-      const mod = (await import(pathToFileURL(entry).href)) as {
-        register?: (api: ModHostApi) => void
-      }
-      const register = mod.register ?? (mod as { default?: { register?: (a: ModHostApi) => void } }).default?.register
+      /*
+       * Loaded through require, with the cache entry dropped first.
+       *
+       * A dynamic `import()` is cached per URL for the life of the process, so a plugin
+       * that was just updated kept running its OLD main bundle until the app restarted —
+       * which also made debugging impossible (the rebuilt code was never executed).
+       */
+      const mod = loadFresh(entry)
+      const register =
+        (mod as { register?: (api: ModHostApi) => void }).register ??
+        (mod as { default?: { register?: (a: ModHostApi) => void } }).default?.register
       if (typeof register !== 'function') {
         console.warn(`[dola] mod "${id}" main bundle has no register() export, skipped`)
         return

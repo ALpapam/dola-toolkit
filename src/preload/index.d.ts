@@ -47,25 +47,8 @@ export interface DolaToolkitApi {
     capture(rect: { x: number; y: number; width: number; height: number }): Promise<string | null>
     setTitleBarTheme(dark: boolean): void
     checkAppUpdate(): Promise<import('@shared/types').AppUpdateInfo>
-    checkCoreUpdates(): Promise<import('@shared/types').CoreUpdateInfo[]>
     downloadAppUpdate(): Promise<{ ok: boolean; path?: string; error?: string }>
     installAppUpdate(installerPath: string, targetVersion?: string): Promise<{ ok: boolean; error?: string }>
-    stageCore(engine: string): Promise<{
-      ok: boolean
-      staged?: import('@shared/types').StagedCoreInfo
-      needsRestart?: boolean
-      error?: string
-    }>
-    stageAllCores(): Promise<{
-      ok: boolean
-      staged: import('@shared/types').StagedCoreInfo[]
-      failed: { engine: string; error: string }[]
-      needsRestart: boolean
-    }>
-    stagedCores(): Promise<import('@shared/types').StagedCoreInfo[]>
-    clearStagedCores(): Promise<{ ok: boolean }>
-    applyStagedNow(): Promise<{ ok: boolean; count?: number; error?: string }>
-    hasStaged(): Promise<boolean>
     openUpdateLog(): Promise<string>
     updateLogPath(): Promise<string>
     takePendingUpdate(): Promise<{ from: string; to: string; updated: boolean } | null>

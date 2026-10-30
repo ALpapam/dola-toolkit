@@ -20,6 +20,7 @@ import { proxyManagerRef, setProxyHost, type ProxyManager } from './manager'
 import {
   applyStagedCores,
   checkCoreUpdates,
+  setUpdateChannel,
   hasStagedCores,
   readStagedCores,
   stageCoreUpdate,
@@ -76,6 +77,9 @@ function asCoreId(v: unknown): CoreId | null {
 
 export function register(dola: ModHostApi): void {
   const host = dola
+  // honour the app's 下载渠道 setting: GitHub direct is unusable on many networks
+  const channel = dola.settings.get().general?.downloadChannel
+  setUpdateChannel(channel === 'mirror' ? 'mirror' : 'github')
   setProxyHost(dola)
   proxyManager = proxyManagerRef()
   wireEvents(dola)
@@ -251,7 +255,7 @@ export function register(dola: ModHostApi): void {
 
   host.ipc.handle('check-core-updates', async () => {
     try {
-      return await checkCoreUpdates()
+      return await checkCoreUpdates(activePort())
     } catch {
       return []
     }
@@ -266,10 +270,7 @@ export function register(dola: ModHostApi): void {
       host.ipc.broadcast('update-progress', { kind: 'core', engine: id, percent: 100, state: 'done' })
       return { ok: true, staged: toStagedInfo(staged), needsRestart: true }
     } catch (e) {
-      const message = e instanceof Error ? `${e.message}
-${(e.stack ?? '').split('
-').slice(1, 4).join('
-')}` : '下载失败'
+      const message = e instanceof Error ? ((e.stack ?? e.message) || '下载失败') : '下载失败'
       host.ipc.broadcast('update-progress', { kind: 'core', engine: id, percent: 0, state: 'error', message })
       return { ok: false, error: message }
     }
@@ -279,7 +280,7 @@ ${(e.stack ?? '').split('
     const staged: StagedCoreInfo[] = []
     const failed: { engine: string; error: string }[] = []
     try {
-      const list = await checkCoreUpdates()
+      const list = await checkCoreUpdates(activePort())
       for (const item of list.filter((c) => c.updateAvailable && c.assetUrl)) {
         try {
           const { staged: one } = await stageCoreUpdate(
