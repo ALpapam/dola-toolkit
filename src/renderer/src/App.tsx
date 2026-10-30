@@ -198,9 +198,12 @@ function useUpdateNudge(): ReactNode {
               toast.warn(`更新未生效，当前仍是 ${APP_VERSION_LABEL}。请在「设置 → 关于」重新下载`)
             }
           }
+          // the proxy feature owns its own update info now
           const [app, cores] = await Promise.all([
             window.api.app.checkAppUpdate(),
-            window.api.app.checkCoreUpdates()
+            window.api.mod
+              .invoke<import('@shared/types').CoreUpdateInfo[]>('proxy', 'check-core-updates')
+              .catch(() => [] as import('@shared/types').CoreUpdateInfo[])
           ])
           if (cancelled) return
           if (app.updateAvailable && app.latest) {
@@ -211,11 +214,13 @@ function useUpdateNudge(): ReactNode {
            * swap worked or it did not. Say which — this is the last chance for the
            * user to learn that a core update silently failed.
            */
-          const stagedNow = await window.api.app.stagedCores()
+          const stagedNow = await window.api.mod
+            .invoke<import('@shared/types').StagedCoreInfo[]>('proxy', 'staged-cores')
+            .catch(() => [] as import('@shared/types').StagedCoreInfo[])
           if (stagedNow.length > 0) {
             toast.warn(`还有 ${stagedNow.length} 个内核等待重启后应用`)
           }
-          const behind = cores.filter((c) => c.updateAvailable)
+          const behind = (cores as { updateAvailable: boolean; label: string }[]).filter((c) => c.updateAvailable)
           if (behind.length > 0) {
             toast.info(`${behind.map((c) => c.label).join(' / ')} 内核可更新`)
           }

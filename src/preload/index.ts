@@ -30,16 +30,9 @@ const api = {
     setTitleBarTheme: (dark: boolean) => ipcRenderer.send(IPC.appTitleBarTheme, dark),
     /* ---- updates ---- */
     checkAppUpdate: () => ipcRenderer.invoke(IPC.updateCheckApp),
-    checkCoreUpdates: () => ipcRenderer.invoke(IPC.updateCheckCores),
     downloadAppUpdate: () => ipcRenderer.invoke(IPC.updateDownloadApp),
     installAppUpdate: (installerPath: string, targetVersion?: string) =>
       ipcRenderer.invoke(IPC.updateInstallApp, installerPath, targetVersion),
-    stageCore: (engine: string) => ipcRenderer.invoke(IPC.updateStageCore, engine),
-    stageAllCores: () => ipcRenderer.invoke(IPC.updateStageAllCores),
-    stagedCores: () => ipcRenderer.invoke(IPC.updateStagedList),
-    clearStagedCores: () => ipcRenderer.invoke(IPC.updateClearStaged),
-    applyStagedNow: () => ipcRenderer.invoke(IPC.updateApplyStagedNow),
-    hasStaged: () => ipcRenderer.invoke(IPC.updateHasStaged),
     openUpdateLog: () => ipcRenderer.invoke(IPC.updateOpenLog),
     updateLogPath: () => ipcRenderer.invoke(IPC.updateLogPath),
     takePendingUpdate: () => ipcRenderer.invoke(IPC.updateTakePending),
