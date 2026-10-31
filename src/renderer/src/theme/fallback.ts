@@ -11,6 +11,7 @@ function buildScheme(theme: ReturnType<typeof themeFromSourceColor>, dark: boole
   const hex = (v: number): string => hexFromArgb(v)
   return {
     primary: hex(s.primary),
+    primaryStrong: hex(s.primary),
     onPrimary: hex(s.onPrimary),
     primaryContainer: hex(s.primaryContainer),
     onPrimaryContainer: hex(s.onPrimaryContainer),

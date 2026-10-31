@@ -2,6 +2,7 @@ import type { ColorScheme, MonetResult, ThemeMode } from '@shared/types'
 
 export const SCHEME_FIELDS = [
   'primary',
+  'primaryStrong',
   'onPrimary',
   'primaryContainer',
   'onPrimaryContainer',

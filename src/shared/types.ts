@@ -183,6 +183,13 @@ export interface MonetResult {
 
 export interface ColorScheme {
   primary: string
+  /**
+   * Saturated primary used for FILLED surfaces (buttons, switch tracks).
+   *
+   * `primary` is the accent used for text and icons; keeping a separate deeper tone
+   * lets the accent get lighter without dropping the contrast of white-on-primary.
+   */
+  primaryStrong: string
   onPrimary: string
   primaryContainer: string
   onPrimaryContainer: string

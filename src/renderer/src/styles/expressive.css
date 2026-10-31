@@ -600,3 +600,46 @@ strong,
 .shortcut-icon {
   aspect-ratio: 1 / 1;
 }
+
+
+/* ------------------------------------------------------------------ */
+/* 填充色与强调色分离                                                   */
+/*                                                                     */
+/* `--md-primary` 现在偏浅，适合当文字与图标色；真正作为实心背景用的地方  */
+/* （白字压在上面）改用 `--md-primary-strong`，对比度不受影响。           */
+/* ------------------------------------------------------------------ */
+
+.btn-filled,
+.switch input:checked + .switch-track,
+.switch-track.on,
+.segmented button.active,
+.progress-fill,
+.slider-fill {
+  background: var(--md-primary-strong);
+}
+
+.btn-filled:hover {
+  background: color-mix(in srgb, var(--md-primary-strong) 92%, var(--md-on-primary));
+}
+
+.btn-filled:active {
+  background: color-mix(in srgb, var(--md-primary-strong) 84%, var(--md-on-primary));
+}
+
+/* 选中态的实心芯片同样需要深一档，否则白字发飘 */
+.chip.active,
+.chip[aria-pressed='true'],
+.set-nav-item.active,
+.rail-item.active {
+  background: color-mix(in srgb, var(--md-primary-strong) 22%, var(--md-surface-container));
+  color: var(--md-on-surface);
+}
+
+/* 强调文字用浅一档的主色 */
+.add-tool-drop,
+.add-tool-hint strong,
+.rail-add,
+.shortcut-add .shortcut-icon,
+.set-section-title .icon {
+  color: var(--md-primary);
+}

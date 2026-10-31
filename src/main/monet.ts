@@ -321,6 +321,7 @@ function buildScheme(
   const containerDelta = dark ? -c * 4 : -c * 4
   const out: ColorScheme = {
     primary: tone(p.primary, primaryTone(p.primary, source, dark) + primaryDelta),
+    primaryStrong: tone(p.primary, primaryStrongTone(source, dark) + primaryDelta),
     onPrimary: tone(p.primary, dark ? 20 : 100),
     primaryContainer: tone(p.primary, (dark ? 30 : 90) + containerDelta),
     onPrimaryContainer: tone(p.primary, (dark ? 90 : 10) - containerDelta),
@@ -361,8 +362,24 @@ function buildScheme(
 }
 
 function primaryTone(palette: TonalPalette, source: number, dark: boolean): number {
-  // MD3 default primary tone is 40 (light) / 80 (dark); keep close to the seed's
-  // own tone so strongly coloured wallpapers do not collapse to the same value.
+  /*
+   * Two accents come out of the seed:
+   *   · primary       — text and icons; deliberately lighter (light tone 50 / dark 76)
+   *                     so accent copy does not read as heavy dark purple
+   *   · primaryStrong — filled surfaces (buttons, switch tracks) stay near the MD3
+   *                     default (light 40 / dark 80) so white labels keep contrast
+   */
+  const seedTone = Hct.fromInt(source).tone
+  if (dark) {
+    const blended = 76 * 0.75 + seedTone * 0.25
+    return Math.max(60, Math.min(88, blended))
+  }
+  const blended = 50 * 0.8 + seedTone * 0.2
+  return Math.max(30, Math.min(62, blended))
+}
+
+/** Tone used where the primary is a filled background. */
+function primaryStrongTone(source: number, dark: boolean): number {
   const seedTone = Hct.fromInt(source).tone
   const target = dark ? 80 : 40
   const blended = target * 0.75 + seedTone * 0.25

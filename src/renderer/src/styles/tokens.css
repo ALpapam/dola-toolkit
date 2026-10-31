@@ -26,7 +26,15 @@
   --md-on-error-container: #410e0b;
   --md-background: #fef7ff;
   /* the MD3 surface is nearly white; a light rose wash keeps the app from looking stark */
-  --dola-bg: color-mix(in srgb, var(--md-background) 86%, #ffe1ef);
+  /*
+   * 背景比表面色多一层淡粉：主色容器保证跟随主题，另混入一点暖粉，
+   * 使默认紫色主题下呈现出「淡粉」而不是灰白。
+   */
+  --dola-bg: color-mix(
+    in srgb,
+    var(--md-background) 74%,
+    color-mix(in srgb, var(--md-primary-container) 55%, #ffd3e6) 26%
+  );
   --md-on-background: #1d1b20;
   --md-surface: #fef7ff;
   --md-on-surface: #1d1b20;
