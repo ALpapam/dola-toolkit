@@ -7,7 +7,7 @@
 // to read outside its own directory.
 // ---------------------------------------------------------------------------
 
-import { protocol } from 'electron'
+import { app, protocol } from 'electron'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { normalize, join, extname, sep } from 'node:path'
 import { modDir } from './manager'
@@ -41,8 +41,18 @@ export function registerModProtocol(): void {
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
       if (!id || !/^[a-zA-Z0-9._-]+$/.test(id)) return new Response('bad mod id', { status: 400 })
 
-      const root = normalize(modDir(id))
-      const target = normalize(join(root, rel || 'index.html'))
+      /*
+       * Two roots are served under one scheme:
+       *   dola-mod://<id>/<path>          the installed plugin (read-only, replaced on upgrade)
+       *   dola-mod://<id>/@data/<path>    the plugin's private data dir (uploads, models)
+       *
+       * A desktop pet has to stream multi-megabyte model files from disk; putting them in
+       * the install folder would mean re-copying them on every plugin upgrade.
+       */
+      const isData = rel.startsWith('@data/')
+      const root = normalize(isData ? join(app.getPath('userData'), 'mod-data', id) : modDir(id))
+      const cleanRel = isData ? rel.slice('@data/'.length) : rel
+      const target = normalize(join(root, cleanRel || 'index.html'))
       // a mod may not escape its own folder with ../ or an absolute path
       if (target !== root && !target.startsWith(root + sep)) {
         return new Response('forbidden', { status: 403 })

@@ -18,7 +18,7 @@
 // separation and shippability, not sandboxing.
 // ---------------------------------------------------------------------------
 
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { desktopWindows } from './desktopWindow'
 import { existsSync as fsExists, mkdirSync as fsMkdir, readFileSync as fsRead, rmSync as fsRm, writeFileSync as fsWrite } from 'node:fs'
 import { existsSync } from 'node:fs'
@@ -80,6 +80,11 @@ export interface ModHostApi {
     read: typeof fsRead
     exists: typeof fsExists
     mkdir: typeof fsMkdir
+  }
+  /** modal pickers, so a mod does not need to own Electron dialogs */
+  dialog: {
+    pickDirectory: (title: string) => Promise<string | null>
+    pickFile: (title: string, filters?: { name: string; extensions: string[] }[]) => Promise<string | null>
   }
   /** desktop pet windows */
   desktop: {
@@ -244,6 +249,22 @@ class ModServiceHost {
         main: () => BrowserWindow.getAllWindows()[0] ?? null
       },
       fs: { rm: fsRm, write: fsWrite, read: fsRead, exists: fsExists, mkdir: fsMkdir },
+      dialog: {
+        pickDirectory: async (title) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          const res = await dialog.showOpenDialog(win, { title, properties: ['openDirectory'] })
+          return res.canceled || !res.filePaths.length ? null : res.filePaths[0]
+        },
+        pickFile: async (title, filters) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          const res = await dialog.showOpenDialog(win, {
+            title,
+            filters: filters ?? [],
+            properties: ['openFile']
+          })
+          return res.canceled || !res.filePaths.length ? null : res.filePaths[0]
+        }
+      },
       desktop: {
         open: (spec) => desktopWindows.open(spec, modDir),
         setBounds: (id, bounds) => desktopWindows.setBounds(id, bounds),

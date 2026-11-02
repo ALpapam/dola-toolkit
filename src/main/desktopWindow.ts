@@ -19,7 +19,18 @@
 // ---------------------------------------------------------------------------
 
 import { BrowserWindow, screen } from 'electron'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+/**
+ * The pet page needs the same preload bridge (`window.api.mod`) as the main renderer,
+ * so a mod page can report its character box and toggle click passthrough.
+ * electron-vite emits out/preload/index.js next to out/main/index.js.
+ */
+function preloadPath(): string {
+  return join(__dirname, '../preload/index.js')
+}
 
 export interface DesktopWindowSpec {
   /** mod id that owns the window; also the protocol host for its page */
@@ -88,7 +99,8 @@ export class DesktopWindowHost {
       alwaysOnTop: spec.alwaysOnTop !== false,
       backgroundColor: '#00000000',
       webPreferences: {
-        // the pet is our own page from dola-mod://
+        // the pet is our own page from dola-mod://, and it uses the same mod bridge
+        preload: existsSync(preloadPath()) ? preloadPath() : undefined,
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
