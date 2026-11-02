@@ -19,12 +19,14 @@
 // ---------------------------------------------------------------------------
 
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { desktopWindows } from './desktopWindow'
 import { existsSync as fsExists, mkdirSync as fsMkdir, readFileSync as fsRead, rmSync as fsRm, writeFileSync as fsWrite } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import type { DeepPartial, Settings } from '@shared/types'
 import { getSettings, patchSettings } from './store'
+import { modDir } from './mods/manager'
 
 /** mod ids the next launch should resume (set by a mod's relaunch request). */
 export let pendingResumeMods: string[] = []
@@ -64,6 +66,13 @@ export interface ModHostApi {
     all: () => BrowserWindow[]
     main: () => BrowserWindow | null
   }
+  /**
+   * A transparent, always-on-top, click-through-capable desktop window.
+   *
+   * A desktop pet needs a borderless frameless window that floats over everything and
+   * can ignore the mouse except on the character itself. Electron can do that, but a
+   * mod should not have to hand-roll window options, DPI handling and restore logic.
+   */
   /** a small fs surface, so a mod does not have to reach for node:fs itself */
   fs: {
     rm: typeof fsRm
@@ -71,6 +80,16 @@ export interface ModHostApi {
     read: typeof fsRead
     exists: typeof fsExists
     mkdir: typeof fsMkdir
+  }
+  /** desktop pet windows */
+  desktop: {
+    open: (spec: import('./desktopWindow').DesktopWindowSpec) => Promise<string>
+    setBounds: (id: string, bounds: Partial<import('./desktopWindow').DesktopRect>) => boolean
+    setIgnoreMouse: (id: string, ignore: boolean) => boolean
+    setAlwaysOnTop: (id: string, on: boolean) => boolean
+    setClickRegions: (id: string, rects: import('./desktopWindow').DesktopRect[]) => boolean
+    close: (id: string) => boolean
+    list: () => ReturnType<import('./desktopWindow').DesktopWindowHost['list']>
   }
   app: {
     version: string
@@ -225,6 +244,15 @@ class ModServiceHost {
         main: () => BrowserWindow.getAllWindows()[0] ?? null
       },
       fs: { rm: fsRm, write: fsWrite, read: fsRead, exists: fsExists, mkdir: fsMkdir },
+      desktop: {
+        open: (spec) => desktopWindows.open(spec, modDir),
+        setBounds: (id, bounds) => desktopWindows.setBounds(id, bounds),
+        setIgnoreMouse: (id, ignore) => desktopWindows.setIgnoreMouse(id, ignore),
+        setAlwaysOnTop: (id, on) => desktopWindows.setAlwaysOnTop(id, on),
+        setClickRegions: (id, rects) => desktopWindows.setClickRegions(id, rects),
+        close: (id) => desktopWindows.close(id),
+        list: () => desktopWindows.list()
+      },
       app: {
         version: app.getVersion(),
         quit: () => app.quit(),
