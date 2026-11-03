@@ -49,6 +49,13 @@ export interface ModHostApi {
   version: string
   /** filesystem root the mod may use for its own data (created on demand) */
   dataDir: string
+  /**
+   * The mod's own install folder (`<userData>/mods/<id>`).
+   *
+   * Assets that ship inside the package — a bundled binary, a default model — live here
+   * rather than in `dataDir`, because they are replaced on upgrade and never written to.
+   */
+  installDir: string
   ipc: {
     handle: (channel: string, handler: (...args: unknown[]) => unknown) => void
     broadcast: (channel: string, payload?: unknown) => void
@@ -237,6 +244,7 @@ class ModServiceHost {
       id,
       version: app.getVersion(),
       dataDir: join(app.getPath('userData'), 'mod-data', id),
+      installDir: modDir(id),
       ipc: {
         handle: (channel, handler) => record.handlers.set(channel, handler),
         broadcast: (channel, payload) => {

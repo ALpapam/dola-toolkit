@@ -174,11 +174,34 @@ export function createMainWindow(settings?: Settings): BrowserWindow {
     Menu.buildFromTemplate(items).popup({ window: win })
   })
 
-  // final safety net: block any permission request the UI never asked for
+  // final safety net: whitelist the few permissions our own pages need
   try {
-    win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
       const allowed = permission === 'clipboard-read' || permission === 'clipboard-sanitized-write'
-      callback(allowed)
+      /*
+       * 听音 (speech-to-text) records from the orb page, so the microphone has to be
+       * reachable from a `dola-mod://` page. Granting it only to our own schemes keeps the
+       * whitelist from becoming "any page may ask".
+       */
+      const ownPage = /^(dola-mod|file):$/.test((() => {
+        try {
+          return new URL(wc.getURL()).protocol
+        } catch {
+          return ''
+        }
+      })())
+      callback(allowed || (permission === 'media' && ownPage))
+    })
+    // the check handler is consulted separately, e.g. when getUserMedia enumerates devices
+    win.webContents.session.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+      if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') return true
+      if (permission !== 'media') return false
+      // same restriction as the request handler: only our own pages get the microphone
+      try {
+        return /^(dola-mod|file):$/.test(new URL(requestingOrigin).protocol)
+      } catch {
+        return false
+      }
     })
   } catch {
     /* not fatal */
