@@ -276,7 +276,11 @@ export async function aiChat(messages: ChatMessage[], opts: ChatOptions = {}): P
     }
   }
   const cleanMessages = (Array.isArray(messages) ? messages : [])
-    .filter((m): m is ChatMessage => Boolean(m) && typeof m.content === 'string')
+    .filter((m): m is ChatMessage => {
+      if (!m) return false
+      // text messages and multimodal (image) messages are both valid
+      return typeof m.content === 'string' || Array.isArray(m.content)
+    })
     .map((m) => ({
       role: m.role === 'assistant' || m.role === 'system' ? m.role : 'user',
       content: m.content

@@ -501,9 +501,20 @@ export interface CatalogResult {
 // AI / Sync
 // ---------------------------------------------------------------------------
 
+/** One part of a multimodal message (text, or an image as a data URL). */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  /**
+   * Plain text, or an array of parts for vision models.
+   *
+   * OpenAI-compatible servers expect `content: [{type:'text'}, {type:'image_url'}]` when
+   * an image is attached; the array form is what lets a screenshot go with the prompt.
+   */
+  content: string | ChatContentPart[]
 }
 
 export interface AIStatus {

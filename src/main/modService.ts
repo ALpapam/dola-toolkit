@@ -26,6 +26,7 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import type { DeepPartial, Settings } from '@shared/types'
 import { getSettings, patchSettings } from './store'
+import { aiChat, aiStatus } from './ai'
 import { modDir } from './mods/manager'
 
 /** mod ids the next launch should resume (set by a mod's relaunch request). */
@@ -80,6 +81,20 @@ export interface ModHostApi {
     read: typeof fsRead
     exists: typeof fsExists
     mkdir: typeof fsMkdir
+  }
+  /**
+   * The app's AI client, so a mod can use the user's configured endpoint.
+   *
+   * Mods must not store their own keys: the app owns the settings, so a plugin simply
+   * asks and gets a result (including multimodal messages for vision).
+   */
+  ai: {
+    chat: (messages: { role: string; content: string | unknown[] }[]) => Promise<{
+      ok: boolean
+      content: string
+      error: string | null
+    }>
+    status: () => { configured: boolean; model: string }
   }
   /** modal pickers, so a mod does not need to own Electron dialogs */
   dialog: {
@@ -249,6 +264,16 @@ class ModServiceHost {
         main: () => BrowserWindow.getAllWindows()[0] ?? null
       },
       fs: { rm: fsRm, write: fsWrite, read: fsRead, exists: fsExists, mkdir: fsMkdir },
+      ai: {
+        chat: async (messages) => {
+          const r = await aiChat(messages as Parameters<typeof aiChat>[0])
+          return { ok: r.ok, content: r.content, error: r.error }
+        },
+        status: () => {
+          const st = aiStatus()
+          return { configured: st.configured, model: st.model }
+        }
+      },
       dialog: {
         pickDirectory: async (title) => {
           const win = BrowserWindow.getAllWindows()[0]
