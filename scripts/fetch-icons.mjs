@@ -27,6 +27,8 @@ const ICONS = {
   refresh: 'refresh',
   play: 'play-arrow',
   stop: 'stop',
+  /* 语音合成：设置页里的分区图标 */
+  recordVoiceOver: 'record-voice-over',
   upload: 'upload',
   download: 'download',
   link: 'link',

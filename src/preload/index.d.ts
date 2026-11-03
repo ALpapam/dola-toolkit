@@ -24,7 +24,8 @@ import type {
   Settings,
   SettingsPatch,
   SyncStatus,
-  ToastEvent
+  ToastEvent,
+  TtsResult
 } from '@shared/types'
 
 export interface DolaToolkitApi {
@@ -91,6 +92,13 @@ export interface DolaToolkitApi {
     status(): Promise<AIStatus>
     chat(msgs: { role: 'system' | 'user' | 'assistant'; content: string }[]): Promise<AIChatResult>
     test(): Promise<AIChatResult>
+  }
+  /** local voice output (GPT-SoVITS) */
+  tts: {
+    status(): Promise<{ configured: boolean; ready: boolean; endpoint: string; refAudio: string; reason: string }>
+    speak(text: string): Promise<TtsResult>
+    test(): Promise<TtsResult>
+    pickReference(): Promise<{ path: string | null; preview: string | null }>
   }
   sync: {
     status(): Promise<SyncStatus>

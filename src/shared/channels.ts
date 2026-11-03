@@ -106,6 +106,12 @@ export const IPC = {
   aiChat: 'ai:chat',
   aiTest: 'ai:test',
 
+  // voice output (local GPT-SoVITS)
+  ttsStatus: 'tts:status',
+  ttsSpeak: 'tts:speak',
+  ttsTest: 'tts:test',
+  ttsPickReference: 'tts:pick-reference',
+
   // sync
   syncStatus: 'sync:status',
   syncRun: 'sync:run',

@@ -36,6 +36,40 @@ export interface AISettings {
   timeoutMs: number
 }
 
+/**
+ * Local voice output (GPT-SoVITS).
+ *
+ * The endpoint is the user's own server (usually `http://127.0.0.1:9880/tts`). The app
+ * only sends text and receives audio, so a locally trained voice never leaves the
+ * machine. The reference sample decides the timbre.
+ */
+export interface TtsSettings {
+  enabled: boolean
+  /** full TTS URL, e.g. http://127.0.0.1:9880/tts */
+  endpoint: string
+  /** absolute path to the reference audio (wav/flac) */
+  refAudio: string
+  /** transcript of the reference audio; some models require it */
+  promptText: string
+  /** language of the reference audio: zh | ja | en */
+  promptLang: string
+  /** language of the text being spoken */
+  textLang: string
+  /** 1.0 is normal speed */
+  speed: number
+  timeoutMs: number
+}
+
+/** Result of a local TTS synthesis. */
+export interface TtsResult {
+  ok: boolean
+  /** `data:audio/wav;base64,…`, empty on failure */
+  audio: string
+  /** the text that was spoken */
+  text: string
+  error: string | null
+}
+
 export interface WebDavSettings {
   enabled: boolean
   url: string
@@ -162,6 +196,7 @@ export interface Settings {
   schema: 1
   appearance: AppearanceSettings
   ai: AISettings
+  tts: TtsSettings
   sync: WebDavSettings
   proxy: ProxySettings
   library: LibrarySettings
@@ -626,6 +661,7 @@ export type DeepPartial<T> = {
 export interface SettingsPatch {
   appearance?: Partial<AppearanceSettings>
   ai?: Partial<AISettings>
+  tts?: Partial<TtsSettings>
   sync?: Partial<WebDavSettings>
   proxy?: Partial<ProxySettings>
   library?: Partial<LibrarySettings>

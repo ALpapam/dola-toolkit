@@ -27,6 +27,7 @@ import { createRequire } from 'node:module'
 import type { DeepPartial, Settings } from '@shared/types'
 import { getSettings, patchSettings } from './store'
 import { aiChat, aiStatus } from './ai'
+import { ttsSpeak, ttsStatus } from './tts'
 import { modDir } from './mods/manager'
 
 /** mod ids the next launch should resume (set by a mod's relaunch request). */
@@ -102,6 +103,17 @@ export interface ModHostApi {
       error: string | null
     }>
     status: () => { configured: boolean; model: string }
+  }
+  /**
+   * Local voice output (GPT-SoVITS), so a mod can make the character speak.
+   *
+   * Like `ai`, the app owns the configuration — a plugin never stores a voice sample or
+   * an endpoint. The audio comes back as a data URL, which an `<audio>` tag can play
+   * directly without a second round trip.
+   */
+  tts: {
+    speak: (text: string) => Promise<{ ok: boolean; audio: string; text: string; error: string | null }>
+    status: () => { configured: boolean; ready: boolean; reason: string }
   }
   /** modal pickers, so a mod does not need to own Electron dialogs */
   dialog: {
@@ -280,6 +292,13 @@ class ModServiceHost {
         status: () => {
           const st = aiStatus()
           return { configured: st.configured, model: st.model }
+        }
+      },
+      tts: {
+        speak: (text) => ttsSpeak(text),
+        status: () => {
+          const st = ttsStatus()
+          return { configured: st.configured, ready: st.ready, reason: st.reason }
         }
       },
       dialog: {

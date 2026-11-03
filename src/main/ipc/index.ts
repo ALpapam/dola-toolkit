@@ -14,6 +14,7 @@ import { registerSettingsIpc } from './settings'
 import { registerThemeIpc } from './theme'
 import { registerLibraryIpc } from './library'
 import { registerAiIpc } from './ai'
+import { registerTtsIpc } from './tts'
 import { registerSyncIpc } from './sync'
 import { registerFontsIpc } from './fonts'
 import { registerUpdatesIpc } from './updates'
@@ -47,6 +48,8 @@ export function registerAllIpc(): void {
   // Feature modules owned by the library/AI/sync teammate.
   safe('library', registerLibraryIpc)
   safe('ai', registerAiIpc)
+  // local voice output (GPT-SoVITS)
+  safe('tts', registerTtsIpc)
   safe('sync', registerSyncIpc)
   // reader typography — user-imported + bundled font families
   safe('fonts', registerFontsIpc)
