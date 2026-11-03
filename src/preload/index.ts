@@ -85,13 +85,6 @@ const api = {
     chat: (msgs: unknown) => ipcRenderer.invoke(IPC.aiChat, msgs),
     test: () => ipcRenderer.invoke(IPC.aiTest)
   },
-  /** local voice output (GPT-SoVITS) */
-  tts: {
-    status: () => ipcRenderer.invoke(IPC.ttsStatus),
-    speak: (text: string) => ipcRenderer.invoke(IPC.ttsSpeak, text),
-    test: () => ipcRenderer.invoke(IPC.ttsTest),
-    pickReference: () => ipcRenderer.invoke(IPC.ttsPickReference)
-  },
   sync: {
     status: () => ipcRenderer.invoke(IPC.syncStatus),
     run: () => ipcRenderer.invoke(IPC.syncRun),

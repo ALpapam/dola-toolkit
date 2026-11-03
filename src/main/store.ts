@@ -53,16 +53,6 @@ export const DEFAULT_SETTINGS: Settings = {
     seriesPrompt: SERIES_PROMPT,
     timeoutMs: 60000
   },
-  tts: {
-    enabled: false,
-    endpoint: 'http://127.0.0.1:9880/tts',
-    refAudio: '',
-    promptText: '',
-    promptLang: 'zh',
-    textLang: 'zh',
-    speed: 1,
-    timeoutMs: 120000
-  },
   sync: {
     enabled: false,
     url: '',

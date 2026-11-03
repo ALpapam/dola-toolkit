@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AIChatResult, AIStatus, AppInfo, AppUpdateInfo, CoreUpdateInfo, Settings, SettingsPatch, SyncStatus, TtsResult } from '@shared/types'
+import type { AIChatResult, AIStatus, AppInfo, AppUpdateInfo, CoreUpdateInfo, Settings, SettingsPatch, SyncStatus } from '@shared/types'
 import { useApp } from '../../state/app'
 import { useTheme } from '../../theme/store'
 import { Button, Dialog, IconButton, Segmented, Select, SettingRow, Slider, Spinner, Switch, TextArea, TextInput } from '../../ui/controls'
@@ -13,12 +13,11 @@ import { THEME_PRESETS, presetById } from '@shared/presets'
 import { DEFAULT_READER_FONT_FAMILY, DEFAULT_READER_FONT_ID, SYSTEM_READING_STACK } from '@shared/fonts'
 import { applyAppFont, installFontFaces, resolveReadingFamily } from '../../lib/fonts'
 
-type Section = 'appearance' | 'ai' | 'voice' | 'sync' | 'tools' | 'general' | 'about'
+type Section = 'appearance' | 'ai' | 'sync' | 'tools' | 'general' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: 'appearance', label: '外观与取色', icon: 'palette' },
   { id: 'ai', label: 'AI 助手', icon: 'autoAi' },
-  { id: 'voice', label: '语音合成', icon: 'recordVoiceOver' },
   { id: 'sync', label: 'WebDAV 同步', icon: 'cloudSync' },
   { id: 'tools', label: '工具', icon: 'apps' },
   { id: 'general', label: '通用', icon: 'tune' },
@@ -95,7 +94,6 @@ export function SettingsPage(): JSX.Element {
         <div className="settings-content-inner">
           {section === 'appearance' && <AppearanceSection settings={settings} patch={patch} />}
           {section === 'ai' && <AiSection settings={settings} patch={patch} />}
-          {section === 'voice' && <VoiceSection settings={settings} patch={patch} />}
           {section === 'sync' && <SyncSection settings={settings} patch={patch} />}
           {section === 'tools' && <ToolsSection />}
           {section === 'general' && <GeneralSection settings={settings} patch={patch} />}
@@ -783,199 +781,6 @@ function ChatTester({ open, onClose }: { open: boolean; onClose: () => void }): 
         </div>
       </div>
     </Dialog>
-  )
-}
-
-/* ================================================================== */
-/* Voice (local GPT-SoVITS)                                            */
-/* ================================================================== */
-function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: SettingsPatch) => Promise<void> }): JSX.Element {
-  const tts = settings.tts
-  const [draft, setDraft] = useState({
-    endpoint: tts.endpoint,
-    refAudio: tts.refAudio,
-    promptText: tts.promptText,
-    promptLang: tts.promptLang,
-    textLang: tts.textLang,
-    speed: tts.speed
-  })
-  const [testing, setTesting] = useState(false)
-  const [result, setResult] = useState<TtsResult | null>(null)
-  const [pickingAudio, setPickingAudio] = useState(false)
-
-  const save = (): void => {
-    void patch({ tts: { ...draft, enabled: true } })
-    toast.success('语音合成配置已保存')
-  }
-
-  /**
-   * Speaks one short line.
-   *
-   * This is the only check that matters: `POST /docs` answering proves the server is up,
-   * but only a real synthesis proves the reference audio and language settings are right.
-   */
-  const test = async (): Promise<void> => {
-    setTesting(true)
-    setResult(null)
-    try {
-      // persist first, so the test uses exactly what is on screen
-      await patch({ tts: { ...draft, enabled: true } })
-      const res = await window.api.tts.test()
-      setResult(res)
-      if (!res.ok) toast.error(res.error ?? '语音合成失败')
-      else toast.success('语音服务正常')
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const pickAudio = async (): Promise<void> => {
-    setPickingAudio(true)
-    try {
-      const picked = await window.api.tts.pickReference()
-      if (!picked?.path) return
-      setDraft((d) => ({ ...d, refAudio: picked.path as string }))
-      toast.success('已选择参考音频，记得点「保存」')
-    } finally {
-      setPickingAudio(false)
-    }
-  }
-
-  return (
-    <>
-      <h2 className="set-section-title">
-        <Icon name="recordVoiceOver" size={20} /> 语音合成
-      </h2>
-      <p className="set-section-desc">
-        用你自己的 GPT-SoVITS 音色说话。软件只把文字发给本机的服务，声音模型和音频都留在这台电脑上。
-        桌宠、朗读等需要出声的地方都会用这里的配置。
-      </p>
-
-      <div className="set-card">
-        <SettingRow title="开启语音合成" desc={tts.enabled ? '桌宠会开口说话' : '已关闭，不合成任何音频'}>
-          <Switch checked={tts.enabled} onChange={(v) => void patch({ tts: { enabled: v } })} />
-        </SettingRow>
-
-        <SettingRow title="服务地址" desc="GPT-SoVITS 启动后显示的那个地址，含 /tts">
-          <div style={{ width: 320 }}>
-            <TextInput
-              value={draft.endpoint}
-              onChange={(e) => setDraft((d) => ({ ...d, endpoint: e.target.value }))}
-              placeholder="http://127.0.0.1:9880/tts"
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow
-          title="参考音频"
-          desc={draft.refAudio || '还没选择（3~10 秒的 wav/flac，决定音色）'}
-        >
-          <Button
-            variant="tonal"
-            size="sm"
-            icon="folderData"
-            loading={pickingAudio}
-            onClick={() => void pickAudio()}
-          >
-            选择文件
-          </Button>
-        </SettingRow>
-
-        <SettingRow title="参考音频的语言" desc="这段音频说的是什么语言">
-          <div style={{ width: 160 }}>
-            <Select
-              value={draft.promptLang}
-              onChange={(v) => setDraft((d) => ({ ...d, promptLang: v }))}
-              options={[
-                { value: 'zh', label: '中文' },
-                { value: 'ja', label: '日文' },
-                { value: 'en', label: '英文' },
-                { value: 'ko', label: '韩文' }
-              ]}
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow title="朗读语言" desc="要念的文字是什么语言">
-          <div style={{ width: 160 }}>
-            <Select
-              value={draft.textLang}
-              onChange={(v) => setDraft((d) => ({ ...d, textLang: v }))}
-              options={[
-                { value: 'zh', label: '中文' },
-                { value: 'ja', label: '日文' },
-                { value: 'en', label: '英文' },
-                { value: 'auto', label: '自动' }
-              ]}
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow title="语速" desc={`${draft.speed.toFixed(2)}×`}>
-          <div style={{ width: 200 }}>
-            <Slider
-              value={Math.round(draft.speed * 100)}
-              min={70}
-              max={150}
-              step={5}
-              onChange={(v) => setDraft((d) => ({ ...d, speed: v / 100 }))}
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow title="参考音频的文字" desc="填了更准；留空则由服务自己从音频里提取">
-          <div style={{ width: 320 }}>
-            <TextInput
-              value={draft.promptText}
-              onChange={(e) => setDraft((d) => ({ ...d, promptText: e.target.value }))}
-              placeholder="这段音频说了什么（可留空）"
-            />
-          </div>
-        </SettingRow>
-      </div>
-
-      <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-        <Button variant="filled" icon="save" onClick={save}>
-          保存
-        </Button>
-        <Button variant="tonal" icon="play" loading={testing} onClick={() => void test()}>
-          测试
-        </Button>
-      </div>
-
-      {result ? (
-        <div className="set-card">
-          <div className="tools-format">
-            <div>
-              <div className="tools-format-title">{result.ok ? '合成成功' : '合成失败'}</div>
-              <p className="tools-format-body" style={{ color: result.ok ? undefined : 'var(--md-error)' }}>
-                {result.ok ? `已生成音频：${result.text || '（测试句）'}` : result.error}
-              </p>
-              {result.ok && result.audio ? (
-                <div style={{ marginTop: 12 }}>
-                  <audio controls src={result.audio} style={{ width: '100%' }} />
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="set-card">
-        <div className="tools-format">
-          <div>
-            <div className="tools-format-title">怎么用</div>
-            <p className="tools-format-body">
-              1. 启动 GPT-SoVITS（<code>api_v2.bat</code>），等它显示 <code>Uvicorn running on…</code>。<br />
-              2. 把上面显示的地址填到「服务地址」。<br />
-              3. 选一段 3~10 秒、干净、没有背景音乐的参考音频。<br />
-              4. 点「测试」，听到声音就说明配置对了。<br />
-              服务必须在这台电脑上；软件不会把文字发到别的机器。
-            </p>
-          </div>
-        </div>
-      </div>
-    </>
   )
 }
 
