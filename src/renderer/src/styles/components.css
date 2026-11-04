@@ -1424,12 +1424,27 @@ select.input {
   padding-right: 2px;
 }
 
+/*
+ * A text+button block inside a `.set-card`.
+ *
+ * The horizontal padding is set here rather than left to a wrapper class: `.set-card`
+ * has no padding of its own and `.tools-card` is not used everywhere (mod settings pages
+ * put these inside a plain `.set-card`), which is what left the text flush against the
+ * card edge.
+ */
 .tools-format {
   display: flex;
   gap: var(--sp-4);
   align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 0;
+  /* matches `.set-item` so text lines up with the rows above and below */
+  padding: 14px var(--sp-5);
+}
+
+/* `.tools-card` already pads its content, so the block must not pad again */
+.tools-card .tools-format {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* the button must never shrink: it used to lose its icon and the last glyph */
