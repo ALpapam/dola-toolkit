@@ -114,6 +114,8 @@ export interface ModHostApi {
     setBounds: (id: string, bounds: Partial<import('./desktopWindow').DesktopRect>) => boolean
     setIgnoreMouse: (id: string, ignore: boolean) => boolean
     setAlwaysOnTop: (id: string, on: boolean) => boolean
+    /** bring a focusable panel to the front and give it the keyboard */
+    focus: (id: string) => boolean
     setClickRegions: (id: string, rects: import('./desktopWindow').DesktopRect[]) => boolean
     close: (id: string) => boolean
     list: () => ReturnType<import('./desktopWindow').DesktopWindowHost['list']>
@@ -303,6 +305,7 @@ class ModServiceHost {
         setBounds: (id, bounds) => desktopWindows.setBounds(id, bounds),
         setIgnoreMouse: (id, ignore) => desktopWindows.setIgnoreMouse(id, ignore),
         setAlwaysOnTop: (id, on) => desktopWindows.setAlwaysOnTop(id, on),
+        focus: (id) => desktopWindows.focus(id),
         setClickRegions: (id, rects) => desktopWindows.setClickRegions(id, rects),
         close: (id) => desktopWindows.close(id),
         list: () => desktopWindows.list()

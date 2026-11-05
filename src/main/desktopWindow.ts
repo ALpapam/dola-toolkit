@@ -45,6 +45,18 @@ export interface DesktopWindowSpec {
   /** default true: the whole window ignores the mouse until a click region says otherwise */
   ignoreMouse?: boolean
   alwaysOnTop?: boolean
+  /**
+   * Allow the window to take keyboard focus.
+   *
+   * A pet window must not steal focus from whatever the user is doing, so this defaults
+   * to false. A settings panel opened from the pet needs the opposite: without focus its
+   * inputs never receive keystrokes.
+   */
+  focusable?: boolean
+  /** default false: a window the user resizes would fight with the page's own layout */
+  resizable?: boolean
+  /** default true: hide from Alt-Tab / taskbar */
+  skipTaskbar?: boolean
   /** extra query string appended to the page URL */
   query?: Record<string, string>
 }
@@ -86,15 +98,15 @@ export class DesktopWindowHost {
       // the three flags that make a desktop pet possible
       frame: false,
       transparent: true,
-      resizable: false,
+      resizable: spec.resizable === true,
       movable: false,
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
-      skipTaskbar: true,
+      skipTaskbar: spec.skipTaskbar !== false,
       hasShadow: false,
-      // do not steal focus from whatever the user is doing
-      focusable: false,
+      // do not steal focus from whatever the user is doing — unless it is a panel
+      focusable: spec.focusable === true,
       acceptFirstMouse: true,
       alwaysOnTop: spec.alwaysOnTop !== false,
       backgroundColor: '#00000000',
@@ -166,6 +178,29 @@ export class DesktopWindowHost {
     if (!entry) return false
     entry.win.setAlwaysOnTop(on, on ? 'screen-saver' : 'normal')
     return true
+  }
+
+  /**
+   * Brings a window to the front and gives it keyboard focus.
+   *
+   * A `focusable: false` window cannot take focus at all, so this is only meaningful for
+   * windows opened with `focusable: true` — typically a settings panel the user just
+   * asked for, which would otherwise open behind its own owner.
+   */
+  focus(id: string): boolean {
+    const entry = this.get(id)
+    if (!entry) return false
+    const win = entry.win
+    if (win.isDestroyed()) return false
+    try {
+      if (win.isMinimized()) win.restore()
+      win.moveTop()
+      win.show()
+      win.focus()
+      return true
+    } catch {
+      return false
+    }
   }
 
   /**
